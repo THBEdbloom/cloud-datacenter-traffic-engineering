@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Entwicklungsumgebungen
+.vscode/
+.idea/
+
+# Große oder automatisch erzeugte ns-3-Dateien
+flowmonitor_*.xml
+routing_*.txt
+*.pcap
+*.tr
+
+# Betriebssystem
+.DS_Store
+Thumbs.db
