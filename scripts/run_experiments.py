@@ -1,23 +1,31 @@
 #!/usr/bin/env python3
 """
-Führt alle definierten Simulationen automatisch aus.
+Führt alle definierten ns-3-Datacenter-Simulationen automatisch aus.
 
 Für jede Kombination aus
 
 - Routingstrategie
 - Traffic-Szenario
 
-wird die Datacenter-Simulation gestartet.
+wird die Datacenter-Simulation einmal gestartet.
 
-Aktuell werden folgende Routingstrategien getestet:
+Untersuchte Routingstrategien:
 
 - STANDARD
 - ECMP
 - STATIC
+- ADAPTIVE
 
-Für jede Strategie werden vier Lastszenarien ausgeführt.
+Für jede Routingstrategie werden vier Lastszenarien ausgeführt:
 
-Ausführung:
+1. Baseline
+2. Mittlere Last
+3. Hohe Last
+4. Überlast
+
+Damit werden insgesamt 4 x 4 = 16 Simulationen durchgeführt.
+
+Ausführung aus dem ns-3-Hauptverzeichnis:
 
     python3 python/run_experiments.py
 """
@@ -26,28 +34,16 @@ from __future__ import annotations
 
 import subprocess
 
-from pathlib import Path
-
-# Pfad zum ns-3-Verzeichnis
-NS3_DIR = Path.home() / "ns-3-dev"
-
-# Pfad zur Simulation
-SIMULATION_FILE = (
-    Path.home()
-    / "cloud-datacenter-traffic-engineering"
-    / "simulation"
-    / "datacenter.py"
-)
-
 
 # =========================================================
-# Konfiguration
+# Experimentkonfiguration
 # =========================================================
 
 ROUTING_STRATEGIES = [
     "STANDARD",
     "ECMP",
     "STATIC",
+    "ADAPTIVE",
 ]
 
 SCENARIOS = [
@@ -59,7 +55,7 @@ SCENARIOS = [
 
 
 # =========================================================
-# Hilfsfunktion
+# Einzelne Simulation ausführen
 # =========================================================
 
 def run_simulation(
@@ -67,21 +63,26 @@ def run_simulation(
     scenario: int,
 ) -> None:
     """
-    Startet eine einzelne Simulation.
+    Startet eine einzelne Datacenter-Simulation.
+
+    Die Routingstrategie und das Traffic-Szenario werden
+    als Kommandozeilenargumente an datacenter.py übergeben.
+
+    Bei einem Fehler beendet subprocess.run() das Skript
+    aufgrund von check=True mit einer Fehlermeldung.
     """
 
-    print("\n============================================================")
+    print("\n" + "=" * 60)
     print(f"Routingstrategie : {routing_strategy}")
     print(f"Traffic-Szenario : {scenario}")
-    print("============================================================")
+    print("=" * 60)
 
     subprocess.run(
         [
             "./ns3",
             "run",
-            f"{SIMULATION_FILE} {routing_strategy} {scenario}",
+            f"python/datacenter.py {routing_strategy} {scenario}",
         ],
-        cwd=NS3_DIR,
         check=True,
     )
 
@@ -92,8 +93,8 @@ def run_simulation(
 
 def main() -> None:
     """
-    Führt alle Kombinationen aus Routingstrategie
-    und Traffic-Szenario aus.
+    Führt alle Kombinationen aus Routingstrategie und
+    Traffic-Szenario nacheinander aus.
     """
 
     total_runs = (
@@ -101,7 +102,7 @@ def main() -> None:
         * len(SCENARIOS)
     )
 
-    print("==========================================")
+    print("\n==========================================")
     print("Automatisierte Versuchsdurchführung")
     print("==========================================")
 
@@ -128,7 +129,10 @@ def main() -> None:
             run_number += 1
 
     print("\n==========================================")
-    print("Alle Simulationen wurden erfolgreich abgeschlossen.")
+    print(
+        f"Alle {total_runs} Simulationen wurden "
+        f"erfolgreich abgeschlossen."
+    )
     print("==========================================")
 
 

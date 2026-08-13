@@ -32,14 +32,18 @@ import pandas as pd
 # Allgemeine Konfiguration
 # =========================================================
 
-PROJECT_DIR = Path(__file__).resolve().parent.parent
-RESULT_DIR = PROJECT_DIR / "results"
+PROJECT_DIR = Path.cwd()
 RESULT_PATTERN = "results_*.csv"
 
 OUTPUT_DIR = PROJECT_DIR / "evaluation"
 SUMMARY_FILE = OUTPUT_DIR / "experiment_summary.csv"
 
-EXPECTED_STRATEGIES = ["STANDARD", "ECMP", "STATIC"]
+EXPECTED_STRATEGIES = [
+    "STANDARD",
+    "ECMP",
+    "STATIC",
+    "ADAPTIVE",
+]
 EXPECTED_SCENARIOS = [1, 2, 3, 4]
 
 SCENARIO_LABELS = {
@@ -53,6 +57,7 @@ STRATEGY_LABELS = {
     "STANDARD": "Standard",
     "ECMP": "ECMP",
     "STATIC": "Statisch",
+    "ADAPTIVE": "Lastabhängig",
 }
 
 REQUIRED_COLUMNS = {
@@ -88,7 +93,7 @@ def parse_filename(path: Path) -> tuple[str, int]:
     """
 
     match = re.match(
-        r"results_(standard|ecmp|static)_szenario_(\d+)",
+        r"results_(standard|ecmp|static|adaptive)_szenario_(\d+)",
         path.name.lower(),
     )
 
@@ -260,7 +265,15 @@ def check_experiment_matrix(summary: pd.DataFrame) -> None:
             print(f"  {strategy}, Szenario {scenario}")
 
     if not missing:
-        print("\nAlle 12 erwarteten Versuche wurden gefunden.")
+        expected_count = (
+            len(EXPECTED_STRATEGIES)
+            * len(EXPECTED_SCENARIOS)
+        )
+
+        print(
+            f"\nAlle {expected_count} erwarteten "
+            f"Versuche wurden gefunden."
+        )
 
 
 # =========================================================
@@ -427,7 +440,7 @@ def print_output_files() -> None:
 def main() -> None:
     """Führt die vollständige Auswertung aller Experimente aus."""
 
-    result_files = sorted(RESULT_DIR.glob(RESULT_PATTERN))
+    result_files = sorted(PROJECT_DIR.glob(RESULT_PATTERN))
 
     if not result_files:
         raise FileNotFoundError(

@@ -27,9 +27,22 @@ from ns import ns
 import csv
 import sys
 
-NUM_SPINES = 2
-NUM_LEAVES = 2
-NUM_HOSTS = 4
+# =========================================================
+# Datacenter-Topologie
+#
+# Die Simulation verwendet eine Spine-Leaf-Architektur.
+#
+# 4 Spine-Switches
+# 4 Leaf-Switches
+# 16 Hosts
+#
+# Jeder Leaf ist mit jedem Spine verbunden.
+# An jedem Leaf befinden sich vier Hosts.
+# =========================================================
+
+NUM_SPINES = 4
+NUM_LEAVES = 4
+NUM_HOSTS = 16
 
 LINK_RATE = "10Gbps"
 LINK_DELAY = "2ms"
@@ -47,10 +60,22 @@ PACKET_SIZE_BYTES = 1024
 ON_TIME_SECONDS = 1.0
 OFF_TIME_SECONDS = 0.0
 
+# =========================================================
+# Simulationszeiten
+#
+# Der eigentliche Datenverkehr läuft für zwei Sekunden.
+# Für alle Routingstrategien und Lastszenarien werden
+# identische Start-, Mess- und Endzeiten verwendet.
+#
+# Die verkürzte Simulationsdauer reduziert insbesondere
+# bei hohen Datenraten die Anzahl der zu verarbeitenden
+# Pakete erheblich, ohne die angebotene Last zu verändern.
+# =========================================================
+
 SERVER_START = 0.5
 CLIENT_START = 1.0
-CLIENT_STOP = 9.0
-SIMULATION_END = 10.0
+CLIENT_STOP = 3.0
+SIMULATION_END = 4.0
 
 
 # =========================================================
@@ -121,95 +146,119 @@ if len(sys.argv) == 3:
 SCENARIOS = {
 
     # =====================================================
-    # Szenario 1
-    # Baseline
+    # Szenario 1 - Baseline
+    #
+    # Ein einzelner Cross-Leaf-Datenstrom.
+    # Der Datenverkehr läuft von Leaf 0 zu Leaf 3.
     # =====================================================
 
     1: {
-
         "name": "Szenario 1 - Baseline",
-
         "flow_rate": "100Mbps",
 
         "flows": [
-
-            (0, 3),
-
+            (0, 15),
         ],
-
     },
 
 
     # =====================================================
-    # Szenario 2
-    # Mittlere Last
+    # Szenario 2 - Mittlere Last
+    #
+    # Vier parallele Cross-Leaf-Datenströme.
+    # Alle vier Leaves sind am Datenverkehr beteiligt.
     # =====================================================
 
     2: {
-
         "name": "Szenario 2 - Mittlere Last",
-
         "flow_rate": "100Mbps",
 
         "flows": [
-
-            (0, 3),
-            (1, 2),
-            (2, 1),
-            (3, 0),
-
+            (0, 15),   # Leaf 0 -> Leaf 3
+            (4, 11),   # Leaf 1 -> Leaf 2
+            (8, 3),    # Leaf 2 -> Leaf 0
+            (12, 7),   # Leaf 3 -> Leaf 1
         ],
-
     },
 
 
     # =====================================================
-    # Szenario 3
-    # Hohe Last
+    # Szenario 3 - Hohe Last
+    #
+    # Gleiche Kommunikationsbeziehungen wie in Szenario 2,
+    # jedoch mit deutlich höherer Datenrate.
+    #
+    # Dadurch lässt sich der Einfluss steigender Last
+    # unabhängig vom Kommunikationsmuster untersuchen.
     # =====================================================
 
     3: {
-
         "name": "Szenario 3 - Hohe Last",
-
         "flow_rate": "2Gbps",
 
         "flows": [
-
-            (0, 3),
-            (1, 2),
-            (2, 1),
-            (3, 0),
-
+            (0, 15),
+            (4, 11),
+            (8, 3),
+            (12, 7),
         ],
-
     },
 
 
     # =====================================================
-    # Szenario 4
-    # Überlast
+    # Szenario 4 - Überlast
+    #
+    # Identische Kommunikationsbeziehungen mit sehr hoher
+    # Datenrate zur gezielten Erzeugung von Engpässen.
     # =====================================================
 
     4: {
-
         "name": "Szenario 4 - Überlast",
-
         "flow_rate": "12Gbps",
 
         "flows": [
-
-            (0, 3),
-            (1, 2),
-            (2, 1),
-            (3, 0),
-
+            (0, 15),
+            (4, 11),
+            (8, 3),
+            (12, 7),
         ],
-
     },
-
 }
 
+
+# =========================================================
+# Statische Pfadzuordnung
+#
+# Diese Konfiguration wird ausschließlich von der
+# Routingstrategie STATIC verwendet.
+#
+# Jedem Cross-Leaf-Datenstrom wird ein bestimmter
+# Spine-Switch zugeordnet. Dadurch kann die Pfadwahl
+# kontrolliert und reproduzierbar vorgegeben werden.
+#
+# Host-Verteilung:
+#
+# Leaf 0 -> Host 0  bis Host 3
+# Leaf 1 -> Host 4  bis Host 7
+# Leaf 2 -> Host 8  bis Host 11
+# Leaf 3 -> Host 12 bis Host 15
+#
+# Format:
+#
+# (Quellhost, Zielhost): Spine-Index
+#
+# Spine 0 = erster Spine
+# Spine 1 = zweiter Spine
+# Spine 2 = dritter Spine
+# Spine 3 = vierter Spine
+# =========================================================
+
+STATIC_FLOW_SPINES = {
+    (0, 15): 0,   # Leaf 0 -> Leaf 3 über Spine 0
+    (4, 11): 1,   # Leaf 1 -> Leaf 2 über Spine 1
+    (8, 3): 2,    # Leaf 2 -> Leaf 0 über Spine 2
+    (12, 7): 3,   # Leaf 3 -> Leaf 1 über Spine 3
+}
 
 
 # =========================================================
@@ -276,6 +325,33 @@ def assign_subnet(address_helper: ns.Ipv4AddressHelper, devices, subnet_number: 
         ns.Ipv4Mask("255.255.255.252"),
     )
     return address_helper.Assign(devices)
+
+def data_rate_to_bps(data_rate: str) -> float:
+    """
+    Wandelt eine Datenrate aus der Szenariokonfiguration in Bit/s um.
+
+    Unterstützte Einheiten:
+    - Kbps
+    - Mbps
+    - Gbps
+
+    Die Umrechnung wird für die lastabhängige Pfadauswahl benötigt.
+    """
+
+    rate = data_rate.strip()
+
+    if rate.endswith("Gbps"):
+        return float(rate[:-4]) * 1_000_000_000.0
+
+    if rate.endswith("Mbps"):
+        return float(rate[:-4]) * 1_000_000.0
+
+    if rate.endswith("Kbps"):
+        return float(rate[:-4]) * 1_000.0
+
+    raise ValueError(
+        f"Nicht unterstützte Datenrate: {data_rate}"
+    )
 
 def configure_static_routes(
     leaves,
@@ -379,6 +455,119 @@ def configure_static_routes(
             f"über Spine{spine_index} "
             f"(Gateway {gateway_address}, "
             f"Interface {output_interface})"
+        )
+
+def configure_adaptive_routes(
+    leaves,
+    spine_leaf_interfaces,
+    leaf_host_interfaces,
+) -> None:
+    """
+    Konfiguriert eine lastabhängige Pfadzuweisung.
+
+    Für jeden aktiven Cross-Leaf-Datenstrom wird der Spine mit der
+    aktuell geringsten bereits zugewiesenen angebotenen Last gewählt.
+
+    Nach der Auswahl wird die Datenrate des Flows der Last dieses
+    Spines zugerechnet. Dadurch werden nachfolgende Flows bevorzugt
+    auf weniger belastete Spine-Pfade verteilt.
+
+    Die Entscheidung erfolgt vor Simulationsbeginn anhand der
+    angebotenen Flow-Datenraten. Bereits laufende Flows werden
+    während der Simulation nicht dynamisch umgeleitet.
+    """
+
+    static_helper = ns.Ipv4StaticRoutingHelper()
+
+    hosts_per_leaf = NUM_HOSTS // NUM_LEAVES
+
+    # Bereits zugewiesene angebotene Last jedes Spines in Bit/s.
+    spine_loads = [0.0 for _ in range(NUM_SPINES)]
+
+    print("\nLastabhängige Pfadzuordnung:")
+
+    for source_host, destination_host, data_rate in TRAFFIC_FLOWS:
+
+        # Zugehörige Leaves von Quelle und Ziel bestimmen.
+        source_leaf_index = source_host // hosts_per_leaf
+        destination_leaf_index = destination_host // hosts_per_leaf
+
+        # Kommunikation innerhalb desselben Leafs benötigt keinen Spine.
+        if source_leaf_index == destination_leaf_index:
+            print(
+                f"Host {source_host} -> Host {destination_host}: "
+                f"direkt über Leaf {source_leaf_index}"
+            )
+            continue
+
+        # Spine mit der momentan geringsten zugewiesenen Last wählen.
+        spine_index = min(
+            range(NUM_SPINES),
+            key=lambda index: spine_loads[index],
+        )
+
+        flow_rate_bps = data_rate_to_bps(data_rate)
+
+        load_before = spine_loads[spine_index]
+
+        # Index des Links zwischen gewähltem Spine und Quell-Leaf.
+        link_index = (
+            spine_index * NUM_LEAVES
+            + source_leaf_index
+        )
+
+        # Gateway auf dem gewählten Spine bestimmen.
+        gateway_address = spine_leaf_interfaces[
+            link_index
+        ].GetAddress(0)
+
+        # IP-Adresse des Zielhosts bestimmen.
+        destination_address = leaf_host_interfaces[
+            destination_host
+        ].GetAddress(1)
+
+        # IPv4-Objekt des Quell-Leafs abrufen.
+        source_leaf_ipv4 = leaves.Get(
+            source_leaf_index
+        ).GetObject[ns.Ipv4]()
+
+        # Statisches Routingobjekt des Quell-Leafs abrufen.
+        static_routing = static_helper.GetStaticRouting(
+            source_leaf_ipv4
+        )
+
+        # Passendes Ausgangsinterface zum gewählten Spine.
+        output_interface = (
+            FIRST_SPINE_INTERFACE
+            + spine_index
+        )
+
+        # Host-spezifische Route über den ausgewählten Spine eintragen.
+        static_routing.AddHostRouteTo(
+            destination_address,
+            gateway_address,
+            output_interface,
+        )
+
+        # Die angebotene Datenrate dieses Flows anschließend
+        # der Last des ausgewählten Spines zurechnen.
+        spine_loads[spine_index] += flow_rate_bps
+
+        print(
+            f"Host {source_host} -> Host {destination_host} "
+            f"über Spine{spine_index} "
+            f"(Flow: {data_rate}, "
+            f"Last vorher: {load_before / 1_000_000_000.0:.3f} Gbit/s, "
+            f"Last danach: "
+            f"{spine_loads[spine_index] / 1_000_000_000.0:.3f} Gbit/s)"
+        )
+
+    print("\nZugewiesene Last pro Spine:")
+
+    for spine_index, load_bps in enumerate(spine_loads):
+        print(
+            f"Spine {spine_index}: "
+            f"{load_bps / 1_000_000_000.0:.3f} Gbit/s"
         )
 
 def calculate_flow_metrics(stats) -> dict:
@@ -518,6 +707,18 @@ def configure_routing_strategy(
         )
 
         print("Routingstrategie : Statisches Flow-Pinning")
+
+    elif ROUTING_STRATEGY == "ADAPTIVE":
+
+        ns.Ipv4GlobalRoutingHelper.PopulateRoutingTables()
+
+        configure_adaptive_routes(
+            leaves,
+            spine_leaf_interfaces,
+            leaf_host_interfaces,
+        )
+
+        print("Routingstrategie : Lastabhängiges Routing")
 
     else:
 
@@ -772,7 +973,9 @@ def main() -> None:
     ns.Simulator.Stop(ns.Seconds(SIMULATION_END))
 
     print("\nSimulation wird gestartet ...")
+
     ns.Simulator.Run()
+
     print("Simulation wurde beendet.")
 
     flow_monitor.CheckForLostPackets()

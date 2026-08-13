@@ -1,0 +1,2 @@
+flow_id,tx_packets,rx_packets,lost_packets,tx_bytes,rx_bytes,packet_loss_percent,throughput_mbit_s,mean_delay_ms,mean_jitter_ms
+1,24414,24414,0,25683528,25683528,0.000000,102.329076,8.003372,0.000000
