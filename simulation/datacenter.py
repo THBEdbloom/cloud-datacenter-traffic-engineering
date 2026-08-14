@@ -92,6 +92,17 @@ SIMULATION_END = 4.0
 ADAPTIVE_INTERVAL = 0.1       # Messintervall in Sekunden
 ADAPTIVE_HYSTERESIS = 0.15    # mindestens 15 % Verbesserung
 
+# Ein lastbedingter Pfadwechsel wird nur durchgeführt,
+# wenn die Queue-Belegung des alternativen Pfades
+# zusätzlich mindestens 4 KiB geringer ist.
+#
+# Diese absolute Schwelle verhindert Routing-Oszillationen
+# aufgrund sehr kleiner Queue-Unterschiede.
+# Ein nicht mehr verfügbarer Pfad ist davon ausgenommen:
+# Bei einem Linkausfall darf weiterhin sofort auf einen
+# verfügbaren alternativen Pfad gewechselt werden.
+ADAPTIVE_MIN_QUEUE_IMPROVEMENT_BYTES = 4096
+
 
 # =========================================================
 # SIMULATIONSKONFIGURATION
@@ -480,6 +491,61 @@ SCENARIOS = {
             },
         ],
     },
+
+    # =====================================================
+    # Szenario 8 - Linkausfall
+    #
+    # Mehrere Cross-Leaf-Flows laufen zunächst unter
+    # normalen Bedingungen.
+    #
+    # Während der Simulation fällt die Verbindung
+    # Spine0 <-> Leaf0 aus.
+    #
+    # Dadurch wird untersucht, wie die Routingstrategien
+    # auf einen während des Betriebs auftretenden
+    # Infrastrukturfehler reagieren.
+    # =====================================================
+
+    8: {
+        "name": "Szenario 8 - Linkausfall",
+
+        "flows": [
+            {
+                "source": 0,
+                "destination": 15,
+                "rate": "4Gbps",
+                "start": 1.0,
+                "stop": 4.0,
+            },
+            {
+                "source": 1,
+                "destination": 14,
+                "rate": "4Gbps",
+                "start": 1.0,
+                "stop": 4.0,
+            },
+            {
+                "source": 4,
+                "destination": 13,
+                "rate": "4Gbps",
+                "start": 1.0,
+                "stop": 4.0,
+            },
+            {
+                "source": 8,
+                "destination": 12,
+                "rate": "4Gbps",
+                "start": 1.0,
+                "stop": 4.0,
+            },
+        ],
+
+        "failure": {
+            "spine": 0,
+            "leaf": 0,
+            "time": 2.0,
+        },
+    },
 }
 
 
@@ -542,6 +608,15 @@ STATIC_FLOW_SPINES = {
     (4, 13): 0,
     (8, 14): 0,
     (1, 15): 0,
+
+    # Szenario 8 - Linkausfall
+    #
+    # Zwei Flows von Leaf0 werden bewusst über Spine0 geführt,
+    # damit der konfigurierte Linkausfall diese statisch
+    # gepinnten Pfade direkt betrifft.
+    (1, 14): 0,
+    (4, 13): 1,
+    (8, 12): 2,
 }
 
 
@@ -830,9 +905,68 @@ def get_adaptive_path_load(
         source_load,
         destination_load,
     )
-    
+
+def is_adaptive_path_available(
+    spine_index,
+    source_leaf_index,
+    destination_leaf_index,
+    leaves,
+    spines,
+    spine_leaf_links,
+) -> bool:
+    """
+    Prüft, ob ein Spine-Pfad zwischen Quell- und Ziel-Leaf
+    vollständig verfügbar ist.
+
+    Ein Pfad gilt nur dann als verfügbar, wenn sowohl der
+    Spine-Leaf-Link auf der Quellseite als auch der Link
+    auf der Zielseite aktiv sind.
+    """
+
+    for leaf_index in (
+        source_leaf_index,
+        destination_leaf_index,
+    ):
+        link_index = (
+            spine_index * NUM_LEAVES
+            + leaf_index
+        )
+
+        devices = spine_leaf_links[link_index]
+
+        spine_device = devices.Get(0)
+        leaf_device = devices.Get(1)
+
+        spine_ipv4 = spines.Get(
+            spine_index
+        ).GetObject[ns.Ipv4]()
+
+        leaf_ipv4 = leaves.Get(
+            leaf_index
+        ).GetObject[ns.Ipv4]()
+
+        spine_interface = (
+            spine_ipv4.GetInterfaceForDevice(
+                spine_device
+            )
+        )
+
+        leaf_interface = (
+            leaf_ipv4.GetInterfaceForDevice(
+                leaf_device
+            )
+        )
+
+        if (
+            not spine_ipv4.IsUp(spine_interface)
+            or not leaf_ipv4.IsUp(leaf_interface)
+        ):
+            return False
+
+    return True
 
 def update_adaptive_routes(
+    spines,
     leaves,
     spine_leaf_interfaces,
     leaf_host_interfaces,
@@ -909,14 +1043,35 @@ def update_adaptive_routes(
                 link_loads,
             )
 
-        # Spines, auf die in dieser Runde bereits ein Flow
-        # verschoben wurde, zunächst von weiteren
-        # Verschiebungen ausschließen.
-        candidate_spines = [
+        available_spines = [
             spine_index
             for spine_index in range(NUM_SPINES)
+            if is_adaptive_path_available(
+                spine_index,
+                source_leaf_index,
+                destination_leaf_index,
+                leaves,
+                spines,
+                spine_leaf_links,
+            )
+        ]
+
+        if not available_spines:
+            print(
+                f"[ADAPTIVE {current_time:.3f}s] "
+                f"Host {source_host} -> Host {destination_host}: "
+                f"kein verfügbarer Spine-Pfad"
+            )
+            continue
+
+        candidate_spines = [
+            spine_index
+            for spine_index in available_spines
             if spine_index not in used_spines_this_round
         ]
+
+        if not candidate_spines:
+            candidate_spines = available_spines
 
         # Falls bereits alle Spines verwendet wurden,
         # stehen wieder alle Pfade zur Auswahl.
@@ -933,27 +1088,58 @@ def update_adaptive_routes(
         current_load = path_loads[current_spine]
         best_load = path_loads[best_spine]
 
-        # Bereits auf dem ausgewählten Pfad.
-        if best_spine == current_spine:
-            continue
-
-        # Kein Wechsel, wenn der alternative Pfad
-        # nicht tatsächlich geringer belastet ist.
-        if best_load >= current_load:
-            continue
-
-        # Hysterese:
-        # Der alternative Pfad muss deutlich besser sein.
-        required_improvement = (
-            current_load * ADAPTIVE_HYSTERESIS
+        current_path_available = (
+            current_spine in available_spines
         )
 
         if (
-            current_load > 0.0
-            and best_load
-            > current_load - required_improvement
+            current_path_available
+            and best_spine == current_spine
         ):
             continue
+
+        # =====================================================
+        # Stabilitätsprüfung für normale lastbedingte Wechsel
+        # =====================================================
+        #
+        # Ist der aktuelle Pfad ausgefallen, werden diese
+        # Prüfungen bewusst übersprungen. Dadurch kann das
+        # adaptive Routing beim Linkausfall unmittelbar auf
+        # einen noch verfügbaren Spine wechseln.
+        #
+        # Bei einem weiterhin verfügbaren Pfad muss ein
+        # alternativer Spine dagegen sowohl relativ als auch
+        # absolut ausreichend besser sein. Dies verhindert
+        # Route-Flapping aufgrund sehr kleiner Queue-Differenzen.
+
+        if current_path_available:
+
+            # Alternative muss tatsächlich geringer belastet sein.
+            if best_load >= current_load:
+                continue
+
+            queue_improvement = (
+                current_load - best_load
+            )
+
+            # Absolute Mindestverbesserung.
+            if (
+                queue_improvement
+                < ADAPTIVE_MIN_QUEUE_IMPROVEMENT_BYTES
+            ):
+                continue
+
+            # Relative Mindestverbesserung durch Hysterese.
+            required_improvement = (
+                current_load * ADAPTIVE_HYSTERESIS
+            )
+
+            if (
+                current_load > 0.0
+                and queue_improvement
+                < required_improvement
+            ):
+                continue
 
         # =================================================
         # Route auf den neuen Spine umstellen
@@ -1027,6 +1213,111 @@ def update_adaptive_routes(
             f"{best_load / 1024.0:.1f} KiB)"
         )
 
+# =========================================================
+# Linkausfall
+# =========================================================
+
+def fail_spine_leaf_link(
+    spines,
+    leaves,
+    spine_leaf_links,
+    spine_index: int,
+    leaf_index: int,
+) -> None:
+    """
+    Deaktiviert einen Spine-Leaf-Link während der Simulation.
+
+    Beide IPv4-Interfaces der Punkt-zu-Punkt-Verbindung
+    werden heruntergefahren.
+
+    Für STANDARD und ECMP werden anschließend die globalen
+    Routingtabellen neu berechnet, damit alternative Pfade
+    verwendet werden können.
+    """
+
+    link_index = (
+        spine_index * NUM_LEAVES
+        + leaf_index
+    )
+
+    devices = spine_leaf_links[link_index]
+
+    spine_device = devices.Get(0)
+    leaf_device = devices.Get(1)
+
+    spine_ipv4 = spines.Get(
+        spine_index
+    ).GetObject[ns.Ipv4]()
+
+    leaf_ipv4 = leaves.Get(
+        leaf_index
+    ).GetObject[ns.Ipv4]()
+
+    spine_interface = (
+        spine_ipv4.GetInterfaceForDevice(
+            spine_device
+        )
+    )
+
+    leaf_interface = (
+        leaf_ipv4.GetInterfaceForDevice(
+            leaf_device
+        )
+    )
+
+    print()
+    print(
+        f"[FAILURE "
+        f"{ns.Simulator.Now().GetSeconds():.3f}s] "
+        f"Spine{spine_index} <-> Leaf{leaf_index} "
+        f"wird deaktiviert."
+    )
+
+    spine_ipv4.SetDown(spine_interface)
+    leaf_ipv4.SetDown(leaf_interface)
+
+    if ROUTING_STRATEGY in {
+        "STANDARD",
+        "ECMP",
+    }:
+        ns.Ipv4GlobalRoutingHelper.RecomputeRoutingTables()
+
+        print(
+            f"[FAILURE "
+            f"{ns.Simulator.Now().GetSeconds():.3f}s] "
+            "Globale Routingtabellen wurden neu berechnet."
+        )
+
+class LinkFailureEvent(ns.EventImpl):
+    """
+    ns-3-Ereignis zum Auslösen eines Spine-Leaf-Linkausfalls.
+    """
+
+    def __init__(
+        self,
+        spines,
+        leaves,
+        spine_leaf_links,
+        spine_index: int,
+        leaf_index: int,
+    ):
+        super().__init__()
+
+        self.spines = spines
+        self.leaves = leaves
+        self.spine_leaf_links = spine_leaf_links
+        self.spine_index = spine_index
+        self.leaf_index = leaf_index
+
+    def Notify(self):
+        fail_spine_leaf_link(
+            self.spines,
+            self.leaves,
+            self.spine_leaf_links,
+            self.spine_index,
+            self.leaf_index,
+        )
+
 class AdaptiveRoutingEvent(ns.EventImpl):
     """
     ns-3-Ereignis zur dynamischen Aktualisierung
@@ -1035,6 +1326,7 @@ class AdaptiveRoutingEvent(ns.EventImpl):
 
     def __init__(
         self,
+        spines,
         leaves,
         spine_leaf_interfaces,
         leaf_host_interfaces,
@@ -1043,6 +1335,7 @@ class AdaptiveRoutingEvent(ns.EventImpl):
     ):
         super().__init__()
 
+        self.spines = spines
         self.leaves = leaves
         self.spine_leaf_interfaces = spine_leaf_interfaces
         self.leaf_host_interfaces = leaf_host_interfaces
@@ -1051,6 +1344,7 @@ class AdaptiveRoutingEvent(ns.EventImpl):
 
     def Notify(self):
         update_adaptive_routes(
+            self.spines,
             self.leaves,
             self.spine_leaf_interfaces,
             self.leaf_host_interfaces,
@@ -1195,12 +1489,20 @@ def configure_adaptive_routes(
 def calculate_flow_metrics(stats) -> dict:
     tx_packets = int(stats.txPackets)
     rx_packets = int(stats.rxPackets)
-    lost_packets = int(stats.lostPackets)
+
+    # End-to-End-Paketverlust:
+    # Als verloren gelten alle gesendeten Pakete,
+    # die den Empfänger nicht erreicht haben.
+    lost_packets = max(
+        tx_packets - rx_packets,
+        0,
+    )
+
     tx_bytes = int(stats.txBytes)
     rx_bytes = int(stats.rxBytes)
 
     packet_loss_percent = (
-        ((tx_packets - rx_packets) / tx_packets) * 100.0
+        (lost_packets / tx_packets) * 100.0
         if tx_packets > 0
         else 0.0
     )
@@ -1950,20 +2252,70 @@ def main() -> None:
     flow_monitor = flow_monitor_helper.InstallAll()
 
     if ROUTING_STRATEGY == "ADAPTIVE":
-        adaptive_event = AdaptiveRoutingEvent(
+
+        # Für jeden Adaptionszeitpunkt wird ein eigenes
+        # ns-3-Event erzeugt.
+        #
+        # Die Referenzen werden in einer Liste gehalten,
+        # damit die Python-Eventobjekte bis zur Ausführung
+        # nicht vom Garbage Collector freigegeben werden.
+        adaptive_events = []
+
+        adaptive_time = 1.5
+
+        while adaptive_time < SIMULATION_END:
+
+            adaptive_event = AdaptiveRoutingEvent(
+                spines,
+                leaves,
+                spine_leaf_interfaces,
+                leaf_host_interfaces,
+                spine_leaf_links,
+                flow_spines,
+            )
+
+            adaptive_events.append(
+                adaptive_event
+            )
+
+            ns.Simulator.Schedule(
+                ns.Seconds(adaptive_time),
+                adaptive_event,
+            )
+
+            adaptive_time += ADAPTIVE_INTERVAL
+
+    ns.Simulator.Stop(ns.Seconds(SIMULATION_END))
+
+    # =====================================================
+    # Optionaler Linkausfall des aktiven Szenarios
+    # =====================================================
+
+    failure = ACTIVE_SCENARIO.get("failure")
+
+    if failure is not None:
+        failure_spine = int(failure["spine"])
+        failure_leaf = int(failure["leaf"])
+        failure_time = float(failure["time"])
+
+        print(
+            f"Linkausfall       : "
+            f"Spine{failure_spine} <-> Leaf{failure_leaf} "
+            f"bei {failure_time:.3f} s"
+        )
+
+        failure_event = LinkFailureEvent(
+            spines,
             leaves,
-            spine_leaf_interfaces,
-            leaf_host_interfaces,
             spine_leaf_links,
-            flow_spines,
+            failure_spine,
+            failure_leaf,
         )
 
         ns.Simulator.Schedule(
-            ns.Seconds(1.5),
-            adaptive_event,
+            ns.Seconds(failure_time),
+            failure_event,
         )
-
-    ns.Simulator.Stop(ns.Seconds(SIMULATION_END))
 
     print("\nSimulation wird gestartet ...")
 

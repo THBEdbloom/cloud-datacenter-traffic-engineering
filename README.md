@@ -48,7 +48,7 @@ Für das dynamische Hotspot-Szenario enthält die Implementierung zusätzlich ei
 
 ## Traffic-Szenarien
 
-Es werden sieben Szenarien untersucht.
+Es werden acht Szenarien untersucht.
 
 ### Szenario 1 – Baseline
 
@@ -78,25 +78,29 @@ Datenströme mit unterschiedlicher angebotener Last erzeugen eine ungleichmäßi
 
 Das Hotspot-Muster wird zeitabhängig verändert. Dieses Szenario untersucht insbesondere das Verhalten der Routingstrategien bei einer dynamischen Lastsituation.
 
+### Szenario 8 – Linkausfall
+
+Während der laufenden Simulation fällt gezielt ein Spine-Leaf-Link aus. Das Szenario untersucht, wie die Routingstrategien auf eine während des Datenverkehrs auftretende Pfadunterbrechung reagieren und in welchem Umfang Durchsatz, Paketverlust und Latenz beeinflusst werden.
+
 ## Experimentaufbau
 
-Für alle sieben Szenarien werden die vier Routingstrategien untersucht.
+Für alle acht Szenarien werden die vier Routingstrategien untersucht.
 
 Die Szenarien 1 bis 4 dienen hauptsächlich als Basis-, Last- und Überlastreferenzen und werden jeweils einmal ausgeführt.
 
-Für die für Traffic Engineering besonders relevanten Szenarien 5 bis 7 werden jeweils drei Runs durchgeführt.
+Für die Szenarien 5 bis 8 werden jeweils drei Runs durchgeführt.
 
 Damit umfasst der gespeicherte finale Datensatz:
 
 - Szenarien 1–4: 4 Strategien × 4 Szenarien × 1 Run = 16 Experimente
-- Szenarien 5–7: 4 Strategien × 3 Szenarien × 3 Runs = 36 Experimente
-- insgesamt: **52 Experimente**
+- Szenarien 5–8: 4 Strategien × 4 Szenarien × 3 Runs = 48 Experimente
+- insgesamt: **64 Experimente**
 
 Der Seed bleibt für die Versuchsserie auf `1`. Die Run-Nummer wird über den ns-3-Zufallszahlengenerator konfiguriert.
 
 ## Hinweis zu den Wiederholungen
 
-Die aktuelle Simulation ist weitgehend deterministisch. Daher liefern die Wiederholungen in den Szenarien 5 bis 7 identische oder nahezu identische Messergebnisse.
+Die aktuelle Simulation ist weitgehend deterministisch. Daher liefern die Wiederholungen in den Szenarien 5 bis 8 identische oder nahezu identische Messergebnisse.
 
 Die Runs dienen damit vor allem der Überprüfung der Reproduzierbarkeit. Sie stellen bei identischen Ergebnissen keine unabhängigen statistischen Stichproben dar.
 
@@ -158,6 +162,7 @@ Dabei entstehen jeweils getrennte Darstellungen für:
 
 - Basisszenarien 1–4
 - Traffic-Engineering-Szenarien 5–7
+- Ausfallszenario 8
 
 Die Diagramme werden als PNG und PDF gespeichert.
 
@@ -169,7 +174,9 @@ In den Szenarien 1 bis 3 ist die Netzlast niedrig genug, sodass alle Routingstra
 
 Szenario 4 erzeugt eine Überlast, die bereits durch die angebotene Datenrate der einzelnen Flows verursacht wird. Entsprechend können die verschiedenen Pfadstrategien diese grundlegende Kapazitätsüberschreitung nicht verhindern.
 
-Die Szenarien 5 bis 7 sind für den Vergleich der Traffic-Engineering-Verfahren besonders aussagekräftig. Bei Hotspot- und asymmetrischen Verkehrsmustern zeigen sich deutliche Unterschiede zwischen STANDARD beziehungsweise statischem Routing und den Verfahren, die mehrere Pfade besser ausnutzen.
+Die Szenarien 5 bis 7 sind für den Vergleich der Traffic-Engineering-Verfahren besonders aussagekräftig. Bei Hotspot-, asymmetrischen und dynamischen Verkehrsmustern zeigen sich deutliche Unterschiede zwischen STANDARD beziehungsweise statischem Routing und den Verfahren, die mehrere Pfade besser ausnutzen.
+
+Szenario 8 ergänzt die Untersuchung um einen Linkausfall während der laufenden Simulation. Dadurch kann zusätzlich bewertet werden, wie robust die verschiedenen Routingstrategien auf eine Pfadunterbrechung reagieren.
 
 Die Resultate müssen immer im Zusammenhang mit der konkreten Topologie, der Verkehrsmatrix und der implementierten Routinglogik interpretiert werden.
 
@@ -205,7 +212,12 @@ cloud-datacenter-traffic-engineering/
     ├── jitter_basis.{png,pdf}
     ├── jitter_traffic_engineering.{png,pdf}
     ├── fairness_basis.{png,pdf}
-    └── fairness_traffic_engineering.{png,pdf}
+    ├── fairness_traffic_engineering.{png,pdf}
+    ├── throughput_failure.{png,pdf}
+    ├── delay_failure.{png,pdf}
+    ├── packet_loss_failure.{png,pdf}
+    ├── jitter_failure.{png,pdf}
+    └── fairness_failure.{png,pdf}
 ```
 
 FlowMonitor-XML-Dateien, Routingtabellen und Logdateien werden nicht im Repository versioniert, da sie automatisch erzeugt werden können und für die zentrale Ergebnisanalyse nicht erforderlich sind.
@@ -269,6 +281,7 @@ Verfügbare Szenarien:
 5 = Hotspot
 6 = Asymmetrische Last
 7 = Dynamischer Hotspot
+8 = Linkausfall
 ```
 
 ### Experimentserie

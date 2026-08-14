@@ -1,0 +1,2 @@
+routing_strategy,scenario,scenario_name,seed,run_number,number_of_flows,total_tx_packets,total_rx_packets,total_lost_packets,packet_loss_percent,total_throughput_mbit_s,weighted_mean_delay_ms,weighted_mean_jitter_ms,jain_fairness_index
+ADAPTIVE,8,Szenario 8 - Linkausfall,1,1,4,3906248,3856443,49805,1.275009,16163.254974,8.003468,0.000000,0.999500

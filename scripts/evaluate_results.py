@@ -40,6 +40,8 @@ import pandas as pd
 
 PROJECT_DIR = Path.cwd()
 
+RESULTS_DIR = PROJECT_DIR / "results"
+
 SUMMARY_PATTERN = "summary_*_seed_*_run_*.csv"
 
 OUTPUT_DIR = PROJECT_DIR / "evaluation"
@@ -72,6 +74,7 @@ EXPECTED_SCENARIOS = [
     5,
     6,
     7,
+    8,
 ]
 
 
@@ -83,6 +86,7 @@ SCENARIO_LABELS = {
     5: "Hotspot",
     6: "Asymmetrische Last",
     7: "Dynamischer Hotspot",
+    8: "Linkausfall",
 }
 
 
@@ -99,8 +103,12 @@ STRATEGY_LABELS = {
 # S1-S4:
 # klassische Lastskalierung
 #
-# S5-S7:
+# S5-S8:
 # Traffic-Engineering-spezifische Belastungen
+#
+# S8:
+# Ausfallszenario zur Untersuchung des Verhaltens
+# bei einem während der Simulation auftretenden Linkausfall.
 
 SCENARIO_GROUPS = {
     "basis": {
@@ -110,6 +118,10 @@ SCENARIO_GROUPS = {
     "traffic_engineering": {
         "scenarios": [5, 6, 7],
         "title": "Traffic-Engineering-Szenarien",
+    },
+    "failure": {
+        "scenarios": [8],
+        "title": "Ausfallszenario",
     },
 }
 
@@ -224,7 +236,7 @@ def load_all_results() -> pd.DataFrame:
     """
 
     files = sorted(
-        PROJECT_DIR.glob(
+        RESULTS_DIR.glob(
             SUMMARY_PATTERN
         )
     )
@@ -233,7 +245,7 @@ def load_all_results() -> pd.DataFrame:
         raise FileNotFoundError(
             "Keine Summary-Dateien mit dem Muster "
             f"'{SUMMARY_PATTERN}' in "
-            f"{PROJECT_DIR} gefunden."
+            f"{RESULTS_DIR} gefunden."
         )
 
     print()
@@ -352,7 +364,7 @@ def check_experiment_matrix(
 
     Versuchsdesign:
         Szenario 1-4: Run 1
-        Szenario 5-7: Runs 1, 2 und 3
+        Szenario 5-8: Runs 1, 2 und 3
 
     Für alle Experimente wird Seed 1 verwendet.
     """
@@ -365,6 +377,7 @@ def check_experiment_matrix(
         5: [1, 2, 3],
         6: [1, 2, 3],
         7: [1, 2, 3],
+        8: [1, 2, 3],
     }
 
     expected_seeds = [1]
@@ -421,7 +434,7 @@ def check_experiment_matrix(
 
     print(
         "Runs       : "
-        "S1-S4 = [1], S5-S7 = [1, 2, 3]"
+        "S1-S4 = [1], S5-S8 = [1, 2, 3]"
     )
 
     print(

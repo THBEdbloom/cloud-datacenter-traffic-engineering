@@ -17,12 +17,26 @@ STRATEGIES = [
     "ADAPTIVE",
 ]
 
-SCENARIOS = range(5, 8)
+SCENARIOS = range(1, 9)
 
 SEED = 1
 
-# Pilotmessung: zusätzliche Runs 2 und 3
-RUNS = range(2, 4)
+# Szenarien 1-4:
+# grundlegende Referenz- und Lastszenarien mit einem Lauf.
+#
+# Szenarien 5-8:
+# komplexere Hotspot-, asymmetrische, dynamische und
+# Ausfallszenarien mit drei Wiederholungen.
+RUNS_BY_SCENARIO = {
+    1: [1],
+    2: [1],
+    3: [1],
+    4: [1],
+    5: [1, 2, 3],
+    6: [1, 2, 3],
+    7: [1, 2, 3],
+    8: [1, 2, 3],
+}
 
 
 # =========================================================
@@ -43,7 +57,7 @@ experiments = [
     (strategy, scenario, run)
     for scenario in SCENARIOS
     for strategy in STRATEGIES
-    for run in RUNS
+    for run in RUNS_BY_SCENARIO[scenario]
 ]
 
 total = len(experiments)
@@ -53,7 +67,7 @@ print("Datacenter Routing - Experimentserie")
 print("=" * 60)
 print(f"Strategien : {len(STRATEGIES)}")
 print(f"Szenarien  : {len(list(SCENARIOS))}")
-print(f"Runs       : {len(list(RUNS))}")
+print("Runs       : S1-S4 = [1], S5-S8 = [1, 2, 3]")
 print(f"Seed       : {SEED}")
 print(f"Gesamt     : {total} Simulationen")
 print("=" * 60)
