@@ -1,0 +1,2 @@
+routing_strategy,scenario,scenario_name,seed,run_number,number_of_flows,total_tx_packets,total_rx_packets,total_lost_packets,packet_loss_percent,total_throughput_mbit_s,weighted_mean_delay_ms,weighted_mean_jitter_ms,jain_fairness_index
+STANDARD,4,Szenario 4 - Überlast,1,1,4,11713028,9531272,2181756,18.626746,39765.310026,16.620711,0.000243,1.000000

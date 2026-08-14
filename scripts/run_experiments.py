@@ -1,140 +1,140 @@
 #!/usr/bin/env python3
-"""
-Führt alle definierten ns-3-Datacenter-Simulationen automatisch aus.
-
-Für jede Kombination aus
-
-- Routingstrategie
-- Traffic-Szenario
-
-wird die Datacenter-Simulation einmal gestartet.
-
-Untersuchte Routingstrategien:
-
-- STANDARD
-- ECMP
-- STATIC
-- ADAPTIVE
-
-Für jede Routingstrategie werden vier Lastszenarien ausgeführt:
-
-1. Baseline
-2. Mittlere Last
-3. Hohe Last
-4. Überlast
-
-Damit werden insgesamt 4 x 4 = 16 Simulationen durchgeführt.
-
-Ausführung aus dem ns-3-Hauptverzeichnis:
-
-    python3 python/run_experiments.py
-"""
-
-from __future__ import annotations
 
 import subprocess
+import sys
+import time
+from pathlib import Path
 
 
 # =========================================================
 # Experimentkonfiguration
 # =========================================================
 
-ROUTING_STRATEGIES = [
+STRATEGIES = [
     "STANDARD",
     "ECMP",
     "STATIC",
     "ADAPTIVE",
 ]
 
-SCENARIOS = [
-    1,
-    2,
-    3,
-    4,
+SCENARIOS = range(5, 8)
+
+SEED = 1
+
+# Pilotmessung: zusätzliche Runs 2 und 3
+RUNS = range(2, 4)
+
+
+# =========================================================
+# Verzeichnisse
+# =========================================================
+
+NS3_DIR = Path.home() / "ns-3-dev"
+
+LOG_DIR = NS3_DIR / "experiment_logs"
+LOG_DIR.mkdir(exist_ok=True)
+
+
+# =========================================================
+# Experimentübersicht
+# =========================================================
+
+experiments = [
+    (strategy, scenario, run)
+    for scenario in SCENARIOS
+    for strategy in STRATEGIES
+    for run in RUNS
 ]
 
+total = len(experiments)
+
+print("=" * 60)
+print("Datacenter Routing - Experimentserie")
+print("=" * 60)
+print(f"Strategien : {len(STRATEGIES)}")
+print(f"Szenarien  : {len(list(SCENARIOS))}")
+print(f"Runs       : {len(list(RUNS))}")
+print(f"Seed       : {SEED}")
+print(f"Gesamt     : {total} Simulationen")
+print("=" * 60)
+
 
 # =========================================================
-# Einzelne Simulation ausführen
+# Simulationen durchführen
 # =========================================================
 
-def run_simulation(
-    routing_strategy: str,
-    scenario: int,
-) -> None:
-    """
-    Startet eine einzelne Datacenter-Simulation.
+successful = 0
+failed = 0
 
-    Die Routingstrategie und das Traffic-Szenario werden
-    als Kommandozeilenargumente an datacenter.py übergeben.
+start_all = time.time()
 
-    Bei einem Fehler beendet subprocess.run() das Skript
-    aufgrund von check=True mit einer Fehlermeldung.
-    """
-
-    print("\n" + "=" * 60)
-    print(f"Routingstrategie : {routing_strategy}")
-    print(f"Traffic-Szenario : {scenario}")
+for index, (strategy, scenario, run) in enumerate(
+    experiments,
+    start=1,
+):
+    print()
+    print("=" * 60)
+    print(
+        f"[{index}/{total}] "
+        f"{strategy} | Szenario {scenario} | Run {run}"
+    )
     print("=" * 60)
 
-    subprocess.run(
-        [
-            "./ns3",
-            "run",
-            f"python/datacenter.py {routing_strategy} {scenario}",
-        ],
-        check=True,
+    command = [
+        "./ns3",
+        "run",
+        (
+            f"python/datacenter.py "
+            f"{strategy} {scenario} {SEED} {run}"
+        ),
+    ]
+
+    log_file = LOG_DIR / (
+        f"{strategy.lower()}_"
+        f"szenario_{scenario}_"
+        f"seed_{SEED}_run_{run}.log"
     )
+
+    start = time.time()
+
+    with open(
+        log_file,
+        "w",
+        encoding="utf-8",
+    ) as output:
+        result = subprocess.run(
+            command,
+            cwd=NS3_DIR,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+        )
+
+    duration = time.time() - start
+
+    if result.returncode == 0:
+        successful += 1
+        print(f"OK nach {duration:.1f} Sekunden")
+
+    else:
+        failed += 1
+        print(f"FEHLER nach {duration:.1f} Sekunden")
+        print(f"Logdatei: {log_file}")
 
 
 # =========================================================
-# Hauptprogramm
+# Abschluss
 # =========================================================
 
-def main() -> None:
-    """
-    Führt alle Kombinationen aus Routingstrategie und
-    Traffic-Szenario nacheinander aus.
-    """
+duration_all = time.time() - start_all
 
-    total_runs = (
-        len(ROUTING_STRATEGIES)
-        * len(SCENARIOS)
-    )
+print()
+print("=" * 60)
+print("Experimentserie abgeschlossen")
+print("=" * 60)
+print(f"Erfolgreich : {successful}")
+print(f"Fehler      : {failed}")
+print(f"Gesamt      : {total}")
+print(f"Laufzeit    : {duration_all / 60.0:.1f} Minuten")
 
-    print("\n==========================================")
-    print("Automatisierte Versuchsdurchführung")
-    print("==========================================")
-
-    print(f"Routingstrategien : {len(ROUTING_STRATEGIES)}")
-    print(f"Szenarien         : {len(SCENARIOS)}")
-    print(f"Simulationen      : {total_runs}")
-
-    run_number = 1
-
-    for routing_strategy in ROUTING_STRATEGIES:
-
-        for scenario in SCENARIOS:
-
-            print(
-                f"\n--- Versuch "
-                f"{run_number}/{total_runs} ---"
-            )
-
-            run_simulation(
-                routing_strategy,
-                scenario,
-            )
-
-            run_number += 1
-
-    print("\n==========================================")
-    print(
-        f"Alle {total_runs} Simulationen wurden "
-        f"erfolgreich abgeschlossen."
-    )
-    print("==========================================")
-
-
-if __name__ == "__main__":
-    main()
+if failed > 0:
+    sys.exit(1)

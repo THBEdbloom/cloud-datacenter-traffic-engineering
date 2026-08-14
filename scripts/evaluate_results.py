@@ -1,27 +1,33 @@
 #!/usr/bin/env python3
 """
-Auswertung aller ns-3-Datacenter-Experimente.
+Statistische Auswertung der ns-3-Datacenter-Experimente.
 
-Das Skript:
-1. sucht alle Ergebnisdateien mit dem Muster ``results_*.csv``,
-2. erkennt Routingstrategie und Szenario aus dem Dateinamen,
-3. prüft die Vollständigkeit der Versuchsmatrix,
-4. berechnet zusammengefasste Kennzahlen pro Versuch,
-5. schreibt eine gemeinsame CSV-Zusammenfassung,
-6. erzeugt Vergleichsdiagramme als PNG- und PDF-Dateien.
+Das Skript verarbeitet die von datacenter.py erzeugten
+Summary-Dateien mehrerer Routingstrategien, Szenarien und Runs.
 
-Ausführung aus dem ns-3-Hauptverzeichnis:
+Ausgewertet werden:
 
-    python3 python/evaluate_results.py
+- Gesamtdurchsatz
+- Paketverlust
+- gewichtete mittlere Latenz
+- gewichteter Jitter
+- Jain's Fairness Index
 
-Benötigte Python-Pakete:
+Für jede Strategie-Szenario-Kombination werden berechnet:
 
-    pip install pandas matplotlib
+- Anzahl der Runs
+- Mittelwert
+- Standardabweichung
+- Minimum
+- Maximum
+- 95-%-Konfidenzintervall
+
+Zusätzlich werden relative Verbesserungen gegenüber
+STANDARD berechnet und Vergleichsdiagramme erzeugt.
 """
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -29,14 +35,27 @@ import pandas as pd
 
 
 # =========================================================
-# Allgemeine Konfiguration
+# Konfiguration
 # =========================================================
 
 PROJECT_DIR = Path.cwd()
-RESULT_PATTERN = "results_*.csv"
+
+SUMMARY_PATTERN = "summary_*_seed_*_run_*.csv"
 
 OUTPUT_DIR = PROJECT_DIR / "evaluation"
-SUMMARY_FILE = OUTPUT_DIR / "experiment_summary.csv"
+
+ALL_RUNS_FILE = (
+    OUTPUT_DIR / "all_experiment_results.csv"
+)
+
+STATISTICS_FILE = (
+    OUTPUT_DIR / "experiment_statistics.csv"
+)
+
+IMPROVEMENT_FILE = (
+    OUTPUT_DIR / "relative_improvement_vs_standard.csv"
+)
+
 
 EXPECTED_STRATEGIES = [
     "STANDARD",
@@ -44,393 +63,1020 @@ EXPECTED_STRATEGIES = [
     "STATIC",
     "ADAPTIVE",
 ]
-EXPECTED_SCENARIOS = [1, 2, 3, 4]
+
+EXPECTED_SCENARIOS = [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+]
+
 
 SCENARIO_LABELS = {
     1: "Baseline",
     2: "Mittlere Last",
     3: "Hohe Last",
     4: "Überlast",
+    5: "Hotspot",
+    6: "Asymmetrische Last",
+    7: "Dynamischer Hotspot",
 }
+
 
 STRATEGY_LABELS = {
     "STANDARD": "Standard",
     "ECMP": "ECMP",
     "STATIC": "Statisch",
-    "ADAPTIVE": "Lastabhängig",
+    "ADAPTIVE": "Adaptiv",
 }
+
+
+# Szenarien werden für die Diagramme bewusst getrennt.
+#
+# S1-S4:
+# klassische Lastskalierung
+#
+# S5-S7:
+# Traffic-Engineering-spezifische Belastungen
+
+SCENARIO_GROUPS = {
+    "basis": {
+        "scenarios": [1, 2, 3, 4],
+        "title": "Basis- und Lastszenarien",
+    },
+    "traffic_engineering": {
+        "scenarios": [5, 6, 7],
+        "title": "Traffic-Engineering-Szenarien",
+    },
+}
+
 
 REQUIRED_COLUMNS = {
-    "flow_id",
-    "tx_packets",
-    "rx_packets",
-    "lost_packets",
-    "tx_bytes",
-    "rx_bytes",
+    "routing_strategy",
+    "scenario",
+    "scenario_name",
+    "seed",
+    "run_number",
+    "number_of_flows",
+    "total_tx_packets",
+    "total_rx_packets",
+    "total_lost_packets",
     "packet_loss_percent",
-    "throughput_mbit_s",
-    "mean_delay_ms",
-    "mean_jitter_ms",
+    "total_throughput_mbit_s",
+    "weighted_mean_delay_ms",
+    "weighted_mean_jitter_ms",
+    "jain_fairness_index",
+}
+
+
+METRICS = {
+    "total_throughput_mbit_s": {
+        "label": "Gesamtdurchsatz (Mbit/s)",
+        "title": "Gesamtdurchsatz",
+        "higher_is_better": True,
+        "filename": "throughput",
+    },
+    "packet_loss_percent": {
+        "label": "Paketverlust (%)",
+        "title": "Paketverlust",
+        "higher_is_better": False,
+        "filename": "packet_loss",
+    },
+    "weighted_mean_delay_ms": {
+        "label": "Gewichtete mittlere Latenz (ms)",
+        "title": "Mittlere Latenz",
+        "higher_is_better": False,
+        "filename": "delay",
+    },
+    "weighted_mean_jitter_ms": {
+        "label": "Gewichteter Jitter (ms)",
+        "title": "Jitter",
+        "higher_is_better": False,
+        "filename": "jitter",
+    },
+    "jain_fairness_index": {
+        "label": "Jain Fairness Index",
+        "title": "Fairness",
+        "higher_is_better": True,
+        "filename": "fairness",
+    },
 }
 
 
 # =========================================================
-# Dateinamen und Eingabedaten
+# Dateien einlesen
 # =========================================================
 
-def parse_filename(path: Path) -> tuple[str, int]:
+def validate_columns(
+    data: pd.DataFrame,
+    path: Path,
+) -> None:
     """
-    Liest Routingstrategie und Szenarionummer aus dem Dateinamen.
-
-    Erwartetes Muster:
-        results_<strategie>_szenario_<nummer>_*.csv
-
-    Beispiel:
-        results_ecmp_szenario_3__hohe_last.csv
-
-    Rückgabe:
-        ("ECMP", 3)
+    Prüft, ob eine Summary-Datei alle erforderlichen
+    Spalten enthält.
     """
 
-    match = re.match(
-        r"results_(standard|ecmp|static|adaptive)_szenario_(\d+)",
-        path.name.lower(),
+    missing = REQUIRED_COLUMNS.difference(
+        data.columns
     )
 
-    if match is None:
+    if missing:
         raise ValueError(
-            "Dateiname entspricht nicht dem erwarteten Muster: "
-            f"{path.name}"
-        )
-
-    strategy = match.group(1).upper()
-    scenario = int(match.group(2))
-
-    if strategy not in EXPECTED_STRATEGIES:
-        raise ValueError(
-            f"Unbekannte Routingstrategie in {path.name}: {strategy}"
-        )
-
-    if scenario not in EXPECTED_SCENARIOS:
-        raise ValueError(
-            f"Unbekanntes Szenario in {path.name}: {scenario}"
-        )
-
-    return strategy, scenario
-
-
-def validate_columns(data: pd.DataFrame, path: Path) -> None:
-    """Prüft, ob eine Ergebnisdatei alle erwarteten Spalten enthält."""
-
-    missing_columns = REQUIRED_COLUMNS.difference(data.columns)
-
-    if missing_columns:
-        raise ValueError(
-            f"{path.name} enthält nicht alle erwarteten Spalten. "
-            f"Fehlend: {sorted(missing_columns)}"
+            f"{path.name} enthält nicht alle "
+            f"erwarteten Spalten. "
+            f"Fehlend: {sorted(missing)}"
         )
 
 
-def weighted_mean(values: pd.Series, weights: pd.Series) -> float:
+def load_summary_file(
+    path: Path,
+) -> pd.DataFrame:
     """
-    Berechnet einen gewichteten Mittelwert.
-
-    Falls die Summe der Gewichte null ist, wird 0.0 zurückgegeben.
-    """
-
-    total_weight = float(weights.sum())
-
-    if total_weight <= 0.0:
-        return 0.0
-
-    return float((values * weights).sum() / total_weight)
-
-
-def load_experiment(path: Path) -> dict[str, object]:
-    """
-    Liest eine einzelne Ergebnisdatei ein und berechnet
-    zusammengefasste Kennzahlen für den gesamten Versuch.
+    Liest eine Summary-Datei ein.
     """
 
-    strategy, scenario = parse_filename(path)
     data = pd.read_csv(path)
 
-    validate_columns(data, path)
-
-    if data.empty:
-        raise ValueError(f"{path.name} enthält keine Flow-Daten.")
-
-    total_tx_packets = int(data["tx_packets"].sum())
-    total_rx_packets = int(data["rx_packets"].sum())
-    total_lost_packets = int(data["lost_packets"].sum())
-
-    total_throughput = float(data["throughput_mbit_s"].sum())
-    mean_throughput = float(data["throughput_mbit_s"].mean())
-
-    # Gewichtung nach der Zahl empfangener Pakete.
-    mean_delay = weighted_mean(
-        data["mean_delay_ms"],
-        data["rx_packets"],
+    validate_columns(
+        data,
+        path,
     )
 
-    # FlowMonitor berechnet Jitter über aufeinanderfolgende Pakete.
-    jitter_weights = (data["rx_packets"] - 1).clip(lower=0)
-    mean_jitter = weighted_mean(
-        data["mean_jitter_ms"],
-        jitter_weights,
+    if len(data) != 1:
+        raise ValueError(
+            f"{path.name} muss genau eine "
+            "Ergebniszeile enthalten."
+        )
+
+    data = data.copy()
+
+    data["source_file"] = path.name
+
+    return data
+
+
+def load_all_results() -> pd.DataFrame:
+    """
+    Lädt alle Summary-Dateien der Versuchsserie.
+    """
+
+    files = sorted(
+        PROJECT_DIR.glob(
+            SUMMARY_PATTERN
+        )
     )
 
-    total_loss_percent = (
-        total_lost_packets / total_tx_packets * 100.0
-        if total_tx_packets > 0
-        else 0.0
+    if not files:
+        raise FileNotFoundError(
+            "Keine Summary-Dateien mit dem Muster "
+            f"'{SUMMARY_PATTERN}' in "
+            f"{PROJECT_DIR} gefunden."
+        )
+
+    print()
+    print("=" * 60)
+    print("Summary-Dateien einlesen")
+    print("=" * 60)
+
+    print(
+        f"{len(files)} Dateien gefunden."
     )
 
-    return {
-        "strategy": strategy,
-        "strategy_label": STRATEGY_LABELS[strategy],
-        "scenario": scenario,
-        "scenario_label": SCENARIO_LABELS[scenario],
-        "flow_count": int(len(data)),
-        "total_tx_packets": total_tx_packets,
-        "total_rx_packets": total_rx_packets,
-        "total_lost_packets": total_lost_packets,
-        "total_packet_loss_percent": total_loss_percent,
-        "total_throughput_mbit_s": total_throughput,
-        "mean_throughput_mbit_s": mean_throughput,
-        "mean_delay_ms": mean_delay,
-        "mean_jitter_ms": mean_jitter,
-        "source_file": path.name,
-    }
+    frames = []
+
+    for path in files:
+        print(
+            f"Lese {path.name}"
+        )
+
+        frames.append(
+            load_summary_file(path)
+        )
+
+    results = pd.concat(
+        frames,
+        ignore_index=True,
+    )
+
+    return results
 
 
 # =========================================================
-# Vollständigkeits- und Plausibilitätsprüfungen
+# Plausibilitätsprüfungen
 # =========================================================
 
-def check_duplicate_experiments(summary: pd.DataFrame) -> None:
+def validate_values(
+    results: pd.DataFrame,
+) -> None:
     """
-    Prüft, ob mehrere Dateien dieselbe Kombination aus
-    Routingstrategie und Szenario repräsentieren.
+    Prüft Strategien und Szenarien.
     """
 
-    duplicates = summary.duplicated(
-        subset=["strategy", "scenario"],
+    unknown_strategies = sorted(
+        set(
+            results[
+                "routing_strategy"
+            ]
+        ).difference(
+            EXPECTED_STRATEGIES
+        )
+    )
+
+    if unknown_strategies:
+        raise ValueError(
+            "Unbekannte Routingstrategien: "
+            f"{unknown_strategies}"
+        )
+
+    unknown_scenarios = sorted(
+        set(
+            results["scenario"]
+        ).difference(
+            EXPECTED_SCENARIOS
+        )
+    )
+
+    if unknown_scenarios:
+        raise ValueError(
+            "Unbekannte Szenarien: "
+            f"{unknown_scenarios}"
+        )
+
+
+def check_duplicates(
+    results: pd.DataFrame,
+) -> None:
+    """
+    Prüft doppelte Strategie-Szenario-Seed-Run-
+    Kombinationen.
+    """
+
+    duplicate_mask = results.duplicated(
+        subset=[
+            "routing_strategy",
+            "scenario",
+            "seed",
+            "run_number",
+        ],
         keep=False,
     )
 
-    if not duplicates.any():
+    if not duplicate_mask.any():
         return
 
-    duplicate_rows = summary.loc[
-        duplicates,
-        ["strategy", "scenario", "source_file"],
+    duplicate_rows = results.loc[
+        duplicate_mask,
+        [
+            "routing_strategy",
+            "scenario",
+            "seed",
+            "run_number",
+            "source_file",
+        ],
     ]
 
     raise ValueError(
-        "Mehrere Ergebnisdateien für dieselbe "
-        "Strategie-Szenario-Kombination gefunden:\n"
+        "Doppelte Experimente gefunden:\n"
         f"{duplicate_rows.to_string(index=False)}"
     )
 
 
-def check_experiment_matrix(summary: pd.DataFrame) -> None:
+def check_experiment_matrix(
+    results: pd.DataFrame,
+) -> None:
     """
-    Prüft, ob alle erwarteten Kombinationen aus
-    Routingstrategie und Szenario vorhanden sind.
+    Prüft die Vollständigkeit der vorgesehenen Versuchsmatrix.
+
+    Versuchsdesign:
+        Szenario 1-4: Run 1
+        Szenario 5-7: Runs 1, 2 und 3
+
+    Für alle Experimente wird Seed 1 verwendet.
     """
 
+    expected_runs = {
+        1: [1],
+        2: [1],
+        3: [1],
+        4: [1],
+        5: [1, 2, 3],
+        6: [1, 2, 3],
+        7: [1, 2, 3],
+    }
+
+    expected_seeds = [1]
+
     found = {
-        (row.strategy, int(row.scenario))
-        for row in summary.itertuples()
+        (
+            row.routing_strategy,
+            int(row.scenario),
+            int(row.seed),
+            int(row.run_number),
+        )
+        for row in results.itertuples()
     }
 
     expected = {
-        (strategy, scenario)
+        (
+            strategy,
+            scenario,
+            seed,
+            run,
+        )
         for strategy in EXPECTED_STRATEGIES
         for scenario in EXPECTED_SCENARIOS
+        for seed in expected_seeds
+        for run in expected_runs[scenario]
     }
 
-    missing = sorted(expected.difference(found))
-    unexpected = sorted(found.difference(expected))
+    missing = sorted(
+        expected.difference(found)
+    )
+
+    unexpected = sorted(
+        found.difference(expected)
+    )
+
+    print()
+    print("=" * 60)
+    print("Versuchsmatrix")
+    print("=" * 60)
+
+    print(
+        f"Strategien : "
+        f"{len(EXPECTED_STRATEGIES)}"
+    )
+
+    print(
+        f"Szenarien  : "
+        f"{len(EXPECTED_SCENARIOS)}"
+    )
+
+    print(
+        f"Seeds      : {expected_seeds}"
+    )
+
+    print(
+        "Runs       : "
+        "S1-S4 = [1], S5-S7 = [1, 2, 3]"
+    )
+
+    print(
+        f"Gefunden   : {len(found)}"
+    )
+
+    print(
+        f"Erwartet   : {len(expected)}"
+    )
 
     if missing:
-        print("\nWARNUNG: Folgende Versuche fehlen:")
-        for strategy, scenario in missing:
-            print(f"  {strategy}, Szenario {scenario}")
+        print()
+        print(
+            "WARNUNG: Folgende Experimente fehlen:"
+        )
+
+        for strategy, scenario, seed, run in missing:
+            print(
+                f"  {strategy}, Szenario {scenario}, "
+                f"Seed {seed}, Run {run}"
+            )
 
     if unexpected:
-        print("\nHinweis: Zusätzliche Versuche gefunden:")
-        for strategy, scenario in unexpected:
-            print(f"  {strategy}, Szenario {scenario}")
-
-    if not missing:
-        expected_count = (
-            len(EXPECTED_STRATEGIES)
-            * len(EXPECTED_SCENARIOS)
-        )
-
+        print()
         print(
-            f"\nAlle {expected_count} erwarteten "
-            f"Versuche wurden gefunden."
+            "WARNUNG: Nicht vorgesehene Experimente gefunden:"
+        )
+
+        for strategy, scenario, seed, run in unexpected:
+            print(
+                f"  {strategy}, Szenario {scenario}, "
+                f"Seed {seed}, Run {run}"
+            )
+
+    if not missing and not unexpected:
+        print(
+            "Versuchsmatrix vollständig."
         )
 
 
-# =========================================================
-# Tabellen- und Diagrammausgabe
-# =========================================================
-
-def print_summary(summary: pd.DataFrame) -> None:
+def calculate_statistics(
+    results: pd.DataFrame,
+) -> pd.DataFrame:
     """
-    Gibt die zusammengefassten Versuchsergebnisse als
-    formatierte Tabelle auf der Konsole aus.
+    Berechnet statistische Kennzahlen über alle Runs
+    derselben Strategie-Szenario-Kombination.
     """
 
-    display_columns = [
-        "strategy_label",
-        "scenario",
-        "flow_count",
-        "total_throughput_mbit_s",
-        "mean_delay_ms",
-        "total_packet_loss_percent",
-        "mean_jitter_ms",
-    ]
+    rows = []
 
-    terminal_table = summary[display_columns].copy()
-    terminal_table = terminal_table.rename(
+    grouped = results.groupby(
+        [
+            "routing_strategy",
+            "scenario",
+            "scenario_name",
+        ],
+        sort=False,
+    )
+
+    for (
+        strategy,
+        scenario,
+        scenario_name,
+    ), group in grouped:
+
+        row = {
+            "routing_strategy": strategy,
+            "strategy_label": (
+                STRATEGY_LABELS[strategy]
+            ),
+            "scenario": int(scenario),
+            "scenario_label": (
+                SCENARIO_LABELS[
+                    int(scenario)
+                ]
+            ),
+            "scenario_name": scenario_name,
+            "number_of_runs": int(
+                len(group)
+            ),
+            "number_of_flows": float(
+                group[
+                    "number_of_flows"
+                ].mean()
+            ),
+        }
+
+        for metric in METRICS:
+
+            values = (
+                group[metric]
+                .astype(float)
+            )
+
+            n = len(values)
+
+            mean_value = float(
+                values.mean()
+            )
+
+            min_value = float(
+                values.min()
+            )
+
+            max_value = float(
+                values.max()
+            )
+
+            # Die Experimente verwenden einen deterministischen
+            # Verkehrsaufbau. Unterschiedliche Run-Nummern dienen
+            # daher primär der Prüfung der Reproduzierbarkeit und
+            # werden nicht als unabhängige Zufallsstichproben
+            # interpretiert.
+            #
+            # Die Standardabweichung wird weiterhin deskriptiv
+            # angegeben. Ein inferenzstatistisches
+            # Konfidenzintervall wird bewusst nicht berechnet.
+
+            if n > 1:
+                std_value = float(
+                    values.std(
+                        ddof=1
+                    )
+                )
+            else:
+                std_value = 0.0
+
+            ci95 = float("nan")
+
+            # Prüfung auf praktische Reproduzierbarkeit.
+            #
+            # Sehr kleine numerische Abweichungen können durch
+            # interne Simulations- bzw. Rundungseffekte entstehen
+            # und werden nicht als relevante Run-Variation gewertet.
+            tolerance = max(
+                abs(mean_value) * 1e-6,
+                1e-9,
+            )
+
+            runs_identical = bool(
+                (values - mean_value)
+                .abs()
+                .max()
+                <= tolerance
+            )
+
+            row[
+                f"{metric}_mean"
+            ] = mean_value
+
+            row[
+                f"{metric}_std"
+            ] = std_value
+
+            row[
+                f"{metric}_min"
+            ] = min_value
+
+            row[
+                f"{metric}_max"
+            ] = max_value
+
+            row[
+                f"{metric}_ci95"
+            ] = ci95
+
+            row[
+                f"{metric}_runs_identical"
+            ] = runs_identical
+
+        rows.append(row)
+
+    statistics = pd.DataFrame(
+        rows
+    )
+
+    strategy_order = {
+        strategy: index
+        for index, strategy
+        in enumerate(
+            EXPECTED_STRATEGIES
+        )
+    }
+
+    statistics[
+        "strategy_order"
+    ] = statistics[
+        "routing_strategy"
+    ].map(
+        strategy_order
+    )
+
+    statistics = (
+        statistics
+        .sort_values(
+            by=[
+                "scenario",
+                "strategy_order",
+            ]
+        )
+        .drop(
+            columns=[
+                "strategy_order"
+            ]
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+    return statistics
+
+
+# =========================================================
+# Relative Verbesserung gegenüber STANDARD
+# =========================================================
+
+def calculate_relative_improvements(
+    statistics: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Berechnet die relative Verbesserung jeder Strategie
+    gegenüber STANDARD.
+
+    Positive Werte bedeuten eine Verbesserung.
+
+    Bei Durchsatz und Fairness ist ein höherer Wert besser.
+    Bei Verlust, Latenz und Jitter ist ein niedrigerer Wert
+    besser.
+    """
+
+    rows = []
+
+    for scenario in EXPECTED_SCENARIOS:
+
+        scenario_data = statistics[
+            statistics["scenario"]
+            == scenario
+        ]
+
+        standard_rows = scenario_data[
+            scenario_data[
+                "routing_strategy"
+            ]
+            == "STANDARD"
+        ]
+
+        if standard_rows.empty:
+            continue
+
+        standard = (
+            standard_rows.iloc[0]
+        )
+
+        for _, row in (
+            scenario_data.iterrows()
+        ):
+
+            if (
+                row[
+                    "routing_strategy"
+                ]
+                == "STANDARD"
+            ):
+                continue
+
+            result = {
+                "scenario": scenario,
+                "scenario_label": (
+                    SCENARIO_LABELS[
+                        scenario
+                    ]
+                ),
+                "routing_strategy": (
+                    row[
+                        "routing_strategy"
+                    ]
+                ),
+                "strategy_label": (
+                    row[
+                        "strategy_label"
+                    ]
+                ),
+            }
+
+            for metric, config in (
+                METRICS.items()
+            ):
+
+                standard_value = float(
+                    standard[
+                        f"{metric}_mean"
+                    ]
+                )
+
+                strategy_value = float(
+                    row[
+                        f"{metric}_mean"
+                    ]
+                )
+
+                if (
+                    abs(
+                        standard_value
+                    )
+                    < 1e-12
+                ):
+                    improvement = float(
+                        "nan"
+                    )
+
+                elif config[
+                    "higher_is_better"
+                ]:
+
+                    improvement = (
+                        (
+                            strategy_value
+                            - standard_value
+                        )
+                        / standard_value
+                        * 100.0
+                    )
+
+                else:
+
+                    improvement = (
+                        (
+                            standard_value
+                            - strategy_value
+                        )
+                        / standard_value
+                        * 100.0
+                    )
+
+                result[
+                    f"{metric}_improvement_percent"
+                ] = improvement
+
+            rows.append(result)
+
+    return pd.DataFrame(rows)
+
+
+# =========================================================
+# Konsolenausgabe
+# =========================================================
+
+def print_statistics(
+    statistics: pd.DataFrame,
+) -> None:
+    """
+    Gibt die wichtigsten Mittelwerte kompakt aus.
+    """
+
+    table = statistics[
+        [
+            "strategy_label",
+            "scenario",
+            "number_of_runs",
+            "total_throughput_mbit_s_mean",
+            "packet_loss_percent_mean",
+            "weighted_mean_delay_ms_mean",
+            "weighted_mean_jitter_ms_mean",
+            "jain_fairness_index_mean",
+        ]
+    ].copy()
+
+    table = table.rename(
         columns={
-            "strategy_label": "Strategie",
-            "scenario": "Szenario",
-            "flow_count": "Flows",
-            "total_throughput_mbit_s": "Gesamtdurchsatz_Mbit_s",
-            "mean_delay_ms": "Mittlere_Latenz_ms",
-            "total_packet_loss_percent": "Paketverlust_Prozent",
-            "mean_jitter_ms": "Mittlerer_Jitter_ms",
+            "strategy_label": (
+                "Strategie"
+            ),
+            "scenario": (
+                "Szenario"
+            ),
+            "number_of_runs": (
+                "Runs"
+            ),
+            "total_throughput_mbit_s_mean": (
+                "Durchsatz_Mbit_s"
+            ),
+            "packet_loss_percent_mean": (
+                "Paketverlust_%"
+            ),
+            "weighted_mean_delay_ms_mean": (
+                "Latenz_ms"
+            ),
+            "weighted_mean_jitter_ms_mean": (
+                "Jitter_ms"
+            ),
+            "jain_fairness_index_mean": (
+                "Fairness"
+            ),
         }
     )
 
-    print("\n==========================================")
-    print("Gesamtauswertung")
-    print("==========================================\n")
+    print()
+    print("=" * 60)
+    print("Statistische Gesamtauswertung")
+    print("=" * 60)
+    print()
 
     print(
-        terminal_table.to_string(
+        table.to_string(
             index=False,
-            float_format=lambda value: f"{value:.3f}",
+            float_format=(
+                lambda value:
+                f"{value:.4f}"
+            ),
         )
     )
 
 
-def create_grouped_bar_chart(
-    summary: pd.DataFrame,
-    value_column: str,
-    ylabel: str,
-    title: str,
-    output_file: Path,
+# =========================================================
+# Diagramme
+# =========================================================
+
+def create_metric_chart(
+    statistics: pd.DataFrame,
+    metric: str,
+    scenarios: list[int],
+    group_title: str,
+    output_name: str,
 ) -> None:
     """
-    Erstellt ein gruppiertes Balkendiagramm.
-
-    Die Szenarien werden auf der x-Achse dargestellt.
-    Für jede Routingstrategie wird eine eigene Balkengruppe erzeugt.
-    Das Diagramm wird als PNG und PDF gespeichert.
+    Erstellt gruppierte Balkendiagramme mit
+    95-%-Konfidenzintervallen.
     """
 
-    pivot = summary.pivot(
-        index="scenario",
-        columns="strategy",
-        values=value_column,
+    config = METRICS[metric]
+
+    figure, axis = plt.subplots(
+        figsize=(11, 6)
     )
 
-    pivot = pivot.reindex(
-        index=EXPECTED_SCENARIOS,
-        columns=EXPECTED_STRATEGIES,
+    number_of_strategies = len(
+        EXPECTED_STRATEGIES
     )
 
-    pivot = pivot.rename(
-        index=SCENARIO_LABELS,
-        columns=STRATEGY_LABELS,
+    width = 0.18
+
+    x_positions = list(
+        range(len(scenarios))
     )
 
-    axis = pivot.plot(
-        kind="bar",
-        figsize=(10, 6),
+    for strategy_index, strategy in enumerate(
+        EXPECTED_STRATEGIES
+    ):
+
+        means = []
+        errors = []
+
+        for scenario in scenarios:
+
+            row = statistics[
+                (
+                    statistics[
+                        "routing_strategy"
+                    ]
+                    == strategy
+                )
+                &
+                (
+                    statistics[
+                        "scenario"
+                    ]
+                    == scenario
+                )
+            ]
+
+            if row.empty:
+                means.append(0.0)
+                errors.append(0.0)
+            else:
+                values = row.iloc[0]
+
+                means.append(
+                    float(
+                        values[
+                            f"{metric}_mean"
+                        ]
+                    )
+                )
+
+                errors.append(
+                    float(
+                        values[
+                            f"{metric}_ci95"
+                        ]
+                    )
+                )
+
+        offset = (
+            strategy_index
+            - (
+                number_of_strategies
+                - 1
+            )
+            / 2
+        ) * width
+
+        positions = [
+            value + offset
+            for value in x_positions
+        ]
+
+        axis.bar(
+            positions,
+            means,
+            width=width,
+            yerr=errors,
+            capsize=3,
+            label=(
+                STRATEGY_LABELS[
+                    strategy
+                ]
+            ),
+        )
+
+    axis.set_title(
+        f"{config['title']} – "
+        f"{group_title}"
     )
 
-    axis.set_title(title)
-    axis.set_xlabel("Traffic-Szenario")
-    axis.set_ylabel(ylabel)
-    axis.tick_params(axis="x", rotation=0)
-    axis.grid(axis="y", alpha=0.3)
+    axis.set_xlabel(
+        "Traffic-Szenario"
+    )
 
-    plt.tight_layout()
+    axis.set_ylabel(
+        config["label"]
+    )
 
-    plt.savefig(
-        output_file,
+    axis.set_xticks(
+        x_positions
+    )
+
+    axis.set_xticklabels(
+        [
+            SCENARIO_LABELS[
+                scenario
+            ]
+            for scenario
+            in scenarios
+        ],
+        rotation=0,
+    )
+
+    axis.grid(
+        axis="y",
+        alpha=0.3,
+    )
+
+    axis.legend()
+
+    figure.tight_layout()
+
+    png_file = (
+        OUTPUT_DIR
+        / f"{output_name}.png"
+    )
+
+    pdf_file = (
+        OUTPUT_DIR
+        / f"{output_name}.pdf"
+    )
+
+    figure.savefig(
+        png_file,
         dpi=200,
         bbox_inches="tight",
     )
 
-    plt.savefig(
-        output_file.with_suffix(".pdf"),
+    figure.savefig(
+        pdf_file,
         bbox_inches="tight",
     )
 
-    plt.close()
-
-
-def create_all_charts(summary: pd.DataFrame) -> None:
-    """Erzeugt alle vorgesehenen Vergleichsdiagramme."""
-
-    create_grouped_bar_chart(
-        summary,
-        "total_throughput_mbit_s",
-        "Gesamtdurchsatz (Mbit/s)",
-        "Gesamtdurchsatz nach Strategie und Szenario",
-        OUTPUT_DIR / "throughput_comparison.png",
+    plt.close(
+        figure
     )
 
-    create_grouped_bar_chart(
-        summary,
-        "mean_delay_ms",
-        "Mittlere Latenz (ms)",
-        "Mittlere Latenz nach Strategie und Szenario",
-        OUTPUT_DIR / "delay_comparison.png",
-    )
 
-    create_grouped_bar_chart(
-        summary,
-        "total_packet_loss_percent",
-        "Paketverlust (%)",
-        "Paketverlust nach Strategie und Szenario",
-        OUTPUT_DIR / "packet_loss_comparison.png",
-    )
+def create_all_charts(
+    statistics: pd.DataFrame,
+) -> None:
+    """
+    Erzeugt Diagramme für alle Messgrößen und
+    beide Szenariogruppen.
+    """
 
-    create_grouped_bar_chart(
-        summary,
-        "mean_jitter_ms",
-        "Mittlerer Jitter (ms)",
-        "Mittlerer Jitter nach Strategie und Szenario",
-        OUTPUT_DIR / "jitter_comparison.png",
-    )
+    for group_name, group in (
+        SCENARIO_GROUPS.items()
+    ):
 
+        scenarios = group[
+            "scenarios"
+        ]
+
+        title = group[
+            "title"
+        ]
+
+        for metric, config in (
+            METRICS.items()
+        ):
+
+            output_name = (
+                f"{config['filename']}_"
+                f"{group_name}"
+            )
+
+            create_metric_chart(
+                statistics,
+                metric,
+                scenarios,
+                title,
+                output_name,
+            )
+
+
+# =========================================================
+# Dateien ausgeben
+# =========================================================
 
 def print_output_files() -> None:
-    """Gibt alle erzeugten Auswertungsdateien auf der Konsole aus."""
+    """
+    Zeigt die wichtigsten erzeugten Dateien.
+    """
 
-    print("\n==========================================")
+    print()
+    print("=" * 60)
     print("Erzeugte Auswertungsdateien")
-    print("==========================================")
+    print("=" * 60)
 
-    print(f"CSV              : {SUMMARY_FILE}")
-    print(f"Durchsatz PNG    : {OUTPUT_DIR / 'throughput_comparison.png'}")
-    print(f"Durchsatz PDF    : {OUTPUT_DIR / 'throughput_comparison.pdf'}")
-    print(f"Latenz PNG       : {OUTPUT_DIR / 'delay_comparison.png'}")
-    print(f"Latenz PDF       : {OUTPUT_DIR / 'delay_comparison.pdf'}")
-    print(f"Paketverlust PNG : {OUTPUT_DIR / 'packet_loss_comparison.png'}")
-    print(f"Paketverlust PDF : {OUTPUT_DIR / 'packet_loss_comparison.pdf'}")
-    print(f"Jitter PNG       : {OUTPUT_DIR / 'jitter_comparison.png'}")
-    print(f"Jitter PDF       : {OUTPUT_DIR / 'jitter_comparison.pdf'}")
+    print(
+        f"Alle Runs        : "
+        f"{ALL_RUNS_FILE}"
+    )
+
+    print(
+        f"Statistik        : "
+        f"{STATISTICS_FILE}"
+    )
+
+    print(
+        f"Verbesserungen   : "
+        f"{IMPROVEMENT_FILE}"
+    )
+
+    print()
+    print(
+        f"Diagramme        : "
+        f"{OUTPUT_DIR}"
+    )
 
 
 # =========================================================
@@ -438,58 +1084,77 @@ def print_output_files() -> None:
 # =========================================================
 
 def main() -> None:
-    """Führt die vollständige Auswertung aller Experimente aus."""
+    """
+    Führt die vollständige statistische Auswertung aus.
+    """
 
-    result_files = sorted(PROJECT_DIR.glob(RESULT_PATTERN))
+    results = load_all_results()
 
-    if not result_files:
-        raise FileNotFoundError(
-            f"Keine Dateien mit dem Muster '{RESULT_PATTERN}' "
-            f"in {PROJECT_DIR} gefunden."
-        )
-
-    print("\n==========================================")
-    print("Ergebnisdateien einlesen")
-    print("==========================================")
-    print(f"{len(result_files)} Ergebnisdateien gefunden.")
-
-    rows: list[dict[str, object]] = []
-
-    for result_file in result_files:
-        print(f"Lese {result_file.name}")
-        rows.append(load_experiment(result_file))
-
-    summary = pd.DataFrame(rows)
-
-    check_duplicate_experiments(summary)
-    check_experiment_matrix(summary)
-
-    strategy_order = {
-        strategy: index
-        for index, strategy in enumerate(EXPECTED_STRATEGIES)
-    }
-
-    summary["strategy_order"] = summary["strategy"].map(
-        strategy_order
+    validate_values(
+        results
     )
 
-    summary = summary.sort_values(
-        by=["scenario", "strategy_order"],
-    ).drop(columns=["strategy_order"])
+    check_duplicates(
+        results
+    )
+
+    check_experiment_matrix(
+        results
+    )
 
     OUTPUT_DIR.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    summary.to_csv(
-        SUMMARY_FILE,
+    # Alle einzelnen Runs speichern.
+    results = results.sort_values(
+        by=[
+            "scenario",
+            "routing_strategy",
+            "seed",
+            "run_number",
+        ]
+    )
+
+    results.to_csv(
+        ALL_RUNS_FILE,
         index=False,
         encoding="utf-8",
     )
 
-    print_summary(summary)
-    create_all_charts(summary)
+    # Statistische Kennzahlen berechnen.
+    statistics = calculate_statistics(
+        results
+    )
+
+    statistics.to_csv(
+        STATISTICS_FILE,
+        index=False,
+        encoding="utf-8",
+    )
+
+    # Relative Verbesserungen berechnen.
+    improvements = (
+        calculate_relative_improvements(
+            statistics
+        )
+    )
+
+    improvements.to_csv(
+        IMPROVEMENT_FILE,
+        index=False,
+        encoding="utf-8",
+    )
+
+    print_statistics(
+        statistics
+    )
+
+    create_all_charts(
+        statistics
+    )
+
     print_output_files()
 
 

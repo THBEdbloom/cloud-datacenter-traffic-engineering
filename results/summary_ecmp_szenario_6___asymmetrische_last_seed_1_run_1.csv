@@ -1,0 +1,2 @@
+routing_strategy,scenario,scenario_name,seed,run_number,number_of_flows,total_tx_packets,total_rx_packets,total_lost_packets,packet_loss_percent,total_throughput_mbit_s,weighted_mean_delay_ms,weighted_mean_jitter_ms,jain_fairness_index
+ECMP,6,Szenario 6 - Asymmetrische Last,1,1,4,4394797,4394797,0,0.000000,18419.622369,8.003668,0.000301,0.736351

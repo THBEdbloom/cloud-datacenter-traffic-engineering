@@ -1,18 +1,16 @@
 # Cloud Datacenter Traffic Engineering
 
-Simulation und Auswertung verschiedener Traffic-Engineering-Strategien in einer Spine-Leaf-Topologie mit **ns-3** und **Python**.
-
-Das Projekt untersucht verschiedene Routingstrategien unter mehreren Lastszenarien und vergleicht deren Auswirkungen auf Durchsatz, Latenz, Paketverlust und Jitter.
+Simulation und Auswertung verschiedener Traffic-Engineering-Strategien in einer Spine-Leaf-Datacenter-Topologie mit ns-3 und Python.
 
 ## Forschungsfrage
 
 **Welchen Einfluss haben verschiedene Traffic-Engineering-Strategien auf die Leistungsfähigkeit eines Cloud-Rechenzentrums hinsichtlich Latenz, Durchsatz und Paketverlust?**
 
+Untersucht werden insbesondere Situationen, in denen mehrere gleichwertige Pfade zwischen Leaf-Switches existieren und sich unterschiedliche Verfahren zur Pfadauswahl auf die Verteilung der Netzwerklast auswirken können.
+
 ## Datacenter-Topologie
 
-Für die Simulation wird eine Spine-Leaf-Topologie verwendet.
-
-Die aktuelle Topologie besteht aus:
+Die simulierte Spine-Leaf-Topologie besteht aus:
 
 - 4 Spine-Knoten
 - 4 Leaf-Knoten
@@ -24,144 +22,95 @@ Die aktuelle Topologie besteht aus:
 - 10-Gbit/s-Links
 - 2-ms-Linkverzögerung
 
-Jeder Leaf-Switch ist mit jedem der vier Spine-Switches verbunden. Dadurch existieren zwischen unterschiedlichen Leaves mehrere gleichwertige Pfade.
-
-Die gegenüber der ursprünglichen kleinen Testtopologie erweiterte Struktur ermöglicht eine realistischere Untersuchung verschiedener Traffic-Engineering-Strategien.
+Jeder Leaf-Switch ist mit allen vier Spine-Switches verbunden. Zwischen Hosts an unterschiedlichen Leaves existieren dadurch mehrere gleichwertige Pfade.
 
 ## Routingstrategien
 
-Es werden vier Routingstrategien untersucht.
+Vier Routingstrategien werden miteinander verglichen.
 
-### 1. Standard Routing
+### STANDARD
 
-Das Standard-Routing verwendet die von ns-3 erzeugten globalen IPv4-Routingtabellen.
+Standardmäßiges globales IPv4-Routing von ns-3. Die ECMP-Zufallsauswahl ist deaktiviert. Diese Variante dient als Referenz.
 
-Die ECMP-Zufallsauswahl ist für diese Strategie deaktiviert.
+### ECMP
 
-Auf diese Weise dient die Strategie als Referenz für die weiteren Routingverfahren.
+Equal-Cost Multi-Path Routing. Für gleichwertige Routen wird die ns-3-Eigenschaft `RandomEcmpRouting` verwendet, sodass unterschiedliche Datenströme auf verschiedene gleichwertige Pfade verteilt werden können.
 
-### 2. ECMP
+### STATIC
 
-ECMP steht für **Equal-Cost Multi-Path Routing**.
+Statisches Flow-Pinning. Datenströme werden explizit bestimmten Spine-Pfaden zugeordnet. Die Pfadwahl bleibt während des jeweiligen Flows unverändert.
 
-Existieren mehrere gleichwertige Pfade zwischen Quelle und Ziel, kann ns-3 unterschiedliche Pfade über die verfügbaren Spine-Knoten auswählen.
+### ADAPTIVE
 
-Für diese Strategie wird die ns-3-Eigenschaft `RandomEcmpRouting` aktiviert.
+Lastabhängige Pfadauswahl. Bei der Zuordnung eines Flows wird die bereits zugewiesene angebotene Last der verfügbaren Spine-Pfade berücksichtigt und ein möglichst wenig belasteter Pfad ausgewählt.
 
-### 3. Statisches Flow-Pinning
+Für das dynamische Hotspot-Szenario enthält die Implementierung zusätzlich eine zeitabhängige Anpassung der Pfadzuordnung. Die Strategie ist dennoch als experimenteller Ansatz zu verstehen und nicht mit einem vollständigen produktiven dynamischen Traffic-Engineering-System gleichzusetzen.
 
-Beim statischen Flow-Pinning wird jedem Datenstrom vor Beginn der Simulation ein fester Spine-Pfad zugewiesen.
+## Traffic-Szenarien
 
-Für die vier Hauptdatenströme werden unterschiedliche Spines verwendet:
-
-- Host 0 → Host 15 über Spine 0
-- Host 4 → Host 11 über Spine 1
-- Host 8 → Host 3 über Spine 2
-- Host 12 → Host 7 über Spine 3
-
-Dadurch wird eine deterministische Verteilung der Datenströme auf die verfügbaren Pfade erreicht.
-
-### 4. Lastabhängiges Routing
-
-Zusätzlich wurde eine lastabhängige Routingstrategie implementiert.
-
-Bei der Pfadzuweisung wird für jeden Datenstrom die bereits zugewiesene angebotene Last der verfügbaren Spine-Pfade betrachtet.
-
-Der neue Datenstrom wird dem Spine mit der aktuell geringsten zugewiesenen Last zugeordnet.
-
-Dadurch entsteht eine einfache lastorientierte Verteilung der Flows auf die vorhandenen Spine-Pfade.
-
-Wichtig ist die Abgrenzung zu vollständig dynamischem Routing: Die Pfadentscheidung erfolgt in der aktuellen Implementierung bei der Konfiguration der Datenströme vor der eigentlichen Verkehrsübertragung. Bereits laufende Flows werden während der Simulation nicht kontinuierlich auf andere Pfade verschoben.
-
-## Lastszenarien
-
-Für jede Routingstrategie werden vier Lastszenarien untersucht.
+Es werden sieben Szenarien untersucht.
 
 ### Szenario 1 – Baseline
 
-Ein einzelner Datenstrom:
-
-- Host 0 → Host 15
-- 100 Mbit/s
+Ein einzelner Flow mit 100 Mbit/s dient als Referenzfall bei sehr geringer Netzlast.
 
 ### Szenario 2 – Mittlere Last
 
-Vier Datenströme:
-
-- Host 0 → Host 15
-- Host 4 → Host 11
-- Host 8 → Host 3
-- Host 12 → Host 7
-
-Jeder Flow erzeugt:
-
-- 100 Mbit/s
-
-Gesamte angebotene Last:
-
-- 400 Mbit/s
+Vier Datenströme mit jeweils 100 Mbit/s erzeugen insgesamt 400 Mbit/s angebotene Last.
 
 ### Szenario 3 – Hohe Last
 
-Die gleichen vier Datenströme werden verwendet.
-
-Jeder Flow erzeugt:
-
-- 2 Gbit/s
-
-Gesamte angebotene Last:
-
-- 8 Gbit/s
+Vier Datenströme mit jeweils 2 Gbit/s erzeugen insgesamt 8 Gbit/s angebotene Last.
 
 ### Szenario 4 – Überlast
 
-Die gleichen vier Datenströme werden verwendet.
+Vier Datenströme mit jeweils 12 Gbit/s erzeugen eine gezielte Überlastsituation. Die angebotene Rate eines einzelnen Flows liegt bereits über der Linkkapazität von 10 Gbit/s.
 
-Jeder Flow erzeugt:
+### Szenario 5 – Hotspot
 
-- 12 Gbit/s
+Mehrere Datenströme erzeugen eine konzentrierte Belastung bestimmter Pfade. Dieses Szenario macht Unterschiede zwischen einfacher Pfadwahl und Lastverteilung deutlich sichtbar.
 
-Gesamte angebotene Last:
+### Szenario 6 – Asymmetrische Last
 
-- 48 Gbit/s
+Datenströme mit unterschiedlicher angebotener Last erzeugen eine ungleichmäßige Verkehrssituation. Dadurch können neben Durchsatz, Paketverlust und Latenz auch Unterschiede in der Fairness sichtbar werden.
 
-Dieses Szenario erzeugt gezielt eine Überlastsituation, da die angebotene Datenrate eines einzelnen Flows bereits über der konfigurierten Link-Datenrate von 10 Gbit/s liegt.
+### Szenario 7 – Dynamischer Hotspot
+
+Das Hotspot-Muster wird zeitabhängig verändert. Dieses Szenario untersucht insbesondere das Verhalten der Routingstrategien bei einer dynamischen Lastsituation.
 
 ## Experimentaufbau
 
-Es werden alle Kombinationen aus Routingstrategie und Lastszenario untersucht.
+Für alle sieben Szenarien werden die vier Routingstrategien untersucht.
 
-| Routingstrategie | Szenario 1 | Szenario 2 | Szenario 3 | Szenario 4 |
-|---|---:|---:|---:|---:|
-| Standard | ✓ | ✓ | ✓ | ✓ |
-| ECMP | ✓ | ✓ | ✓ | ✓ |
-| Statisches Flow-Pinning | ✓ | ✓ | ✓ | ✓ |
-| Lastabhängig | ✓ | ✓ | ✓ | ✓ |
+Die Szenarien 1 bis 4 dienen hauptsächlich als Basis-, Last- und Überlastreferenzen und werden jeweils einmal ausgeführt.
 
-Damit werden insgesamt
+Für die für Traffic Engineering besonders relevanten Szenarien 5 bis 7 werden jeweils drei Runs durchgeführt.
 
-**4 Routingstrategien × 4 Lastszenarien = 16 Simulationen**
+Damit umfasst der gespeicherte finale Datensatz:
 
-durchgeführt.
+- Szenarien 1–4: 4 Strategien × 4 Szenarien × 1 Run = 16 Experimente
+- Szenarien 5–7: 4 Strategien × 3 Szenarien × 3 Runs = 36 Experimente
+- insgesamt: **52 Experimente**
+
+Der Seed bleibt für die Versuchsserie auf `1`. Die Run-Nummer wird über den ns-3-Zufallszahlengenerator konfiguriert.
+
+## Hinweis zu den Wiederholungen
+
+Die aktuelle Simulation ist weitgehend deterministisch. Daher liefern die Wiederholungen in den Szenarien 5 bis 7 identische oder nahezu identische Messergebnisse.
+
+Die Runs dienen damit vor allem der Überprüfung der Reproduzierbarkeit. Sie stellen bei identischen Ergebnissen keine unabhängigen statistischen Stichproben dar.
+
+Aus diesem Grund werden Mittelwert, Standardabweichung, Minimum und Maximum dokumentiert, aber aus identischen deterministischen Wiederholungen keine inferenzstatistischen Konfidenzintervalle abgeleitet.
 
 ## Simulationszeiten
 
-Für alle Routingstrategien und Szenarien werden identische Simulationszeiten verwendet:
+Für die Versuche werden einheitliche grundlegende Simulationsparameter verwendet. Der eigentliche Datenverkehr läuft innerhalb eines begrenzten Simulationszeitraums, um auch Gbit/s-Szenarien mit vertretbarer Rechenzeit untersuchen zu können.
 
-- Start der Server: 0,5 s
-- Start der Clients: 1,0 s
-- Ende des Datenverkehrs: 3,0 s
-- Ende der Simulation: 4,0 s
-
-Der eigentliche Datenverkehr läuft damit für zwei Sekunden.
-
-Die vergleichsweise kurze Simulationsdauer reduziert insbesondere bei Datenraten im Gbit/s-Bereich die Anzahl der von ns-3 zu verarbeitenden Pakete und damit die Rechenzeit.
-
-Da für alle untersuchten Routingstrategien und Lastszenarien identische Zeitparameter verwendet werden, bleiben die Versuche untereinander vergleichbar.
+Die konkreten Start- und Stopzeiten der einzelnen Flows sind in `simulation/datacenter.py` definiert und Bestandteil der jeweiligen Szenariokonfiguration.
 
 ## Messgrößen
 
-Für jeden Datenstrom werden unter anderem folgende Größen mit dem ns-3 FlowMonitor erfasst:
+Der ns-3 FlowMonitor erfasst für die Datenströme unter anderem:
 
 - gesendete Pakete
 - empfangene Pakete
@@ -169,46 +118,60 @@ Für jeden Datenstrom werden unter anderem folgende Größen mit dem ns-3 FlowMo
 - Paketverlust in Prozent
 - Durchsatz in Mbit/s
 - mittlere Ende-zu-Ende-Latenz in ms
-- mittlerer Jitter in ms
+- mittleren Jitter in ms
 
-Die Einzelwerte werden nach jeder Simulation in einer CSV-Datei gespeichert.
-
-## Aktuelle Ergebnisse
-
-Die 16 Simulationen wurden für alle Kombinationen aus Routingstrategie und Lastszenario durchgeführt.
-
-In den Szenarien 1 bis 3 tritt bei der aktuellen Konfiguration kein Paketverlust auf.
-
-Im Überlastszenario wird die Kapazitätsgrenze sichtbar. Bei einer angebotenen Last von 12 Gbit/s pro Flow wird ein Durchsatz von ungefähr 9,94 Gbit/s pro Flow erreicht. Gleichzeitig steigen Paketverlust und Latenz deutlich an.
-
-Die vier Routingstrategien liefern in den aktuell verwendeten symmetrischen Verkehrsszenarien sehr ähnliche beziehungsweise identische Leistungswerte. Dies ist bei der Interpretation zu berücksichtigen: Die Topologie und die Hauptdatenströme sind symmetrisch aufgebaut, sodass die verschiedenen Strategien in diesen Szenarien zu einer gleichmäßigen Pfadnutzung führen können.
-
-Die Implementierungen unterscheiden sich dennoch in der Art ihrer Pfadauswahl und können deshalb separat untersucht und erweitert werden.
-
-## Automatische Auswertung
-
-Das Skript `evaluate_results.py` liest die erzeugten CSV-Dateien ein und erstellt eine Zusammenfassung aller Experimente.
-
-Dabei werden unter anderem folgende aggregierte Größen berechnet:
+Zusätzlich werden für jeden Versuch aggregierte Kennzahlen berechnet:
 
 - Gesamtdurchsatz
-- mittlere Latenz
-- Paketverlust
-- mittlerer Jitter
-- Anzahl der Flows
+- Gesamtpaketverlust
+- gewichtete mittlere Latenz
+- gewichteter mittlerer Jitter
+- Jain Fairness Index
 
-Die Auswertung prüft außerdem, ob alle erwarteten 16 Strategie-Szenario-Kombinationen vorhanden sind.
+## Auswertung
 
-## Erzeugte Diagramme
+`scripts/evaluate_results.py` verarbeitet die erzeugten Summary-Dateien und prüft zunächst die erwartete Versuchsmatrix.
 
-Die Auswertung erzeugt Vergleichsdiagramme für:
+Anschließend werden die Ergebnisse nach Routingstrategie und Szenario zusammengefasst.
+
+Die Auswertung erzeugt insbesondere:
+
+- `all_experiment_results.csv` – alle eingelesenen Versuchsergebnisse
+- `experiment_statistics.csv` – aggregierte Statistik je Strategie und Szenario
+- `relative_improvement_vs_standard.csv` – relative Veränderungen gegenüber STANDARD
+
+Für wiederholte Experimente werden Mittelwert, Standardabweichung, Minimum und Maximum ausgegeben.
+
+## Diagramme
+
+Die Ergebnisse der Basisszenarien und der Traffic-Engineering-Szenarien werden getrennt visualisiert.
+
+Für folgende Kennzahlen werden Diagramme erzeugt:
 
 - Durchsatz
-- Latenz
 - Paketverlust
+- Latenz
 - Jitter
+- Jain Fairness Index
 
-Die Diagramme werden sowohl als **PNG** als auch als **PDF** gespeichert.
+Dabei entstehen jeweils getrennte Darstellungen für:
+
+- Basisszenarien 1–4
+- Traffic-Engineering-Szenarien 5–7
+
+Die Diagramme werden als PNG und PDF gespeichert.
+
+## Zentrale Beobachtungen
+
+Die Ergebnisse zeigen drei unterschiedliche Bereiche.
+
+In den Szenarien 1 bis 3 ist die Netzlast niedrig genug, sodass alle Routingstrategien praktisch identische Ergebnisse erzielen.
+
+Szenario 4 erzeugt eine Überlast, die bereits durch die angebotene Datenrate der einzelnen Flows verursacht wird. Entsprechend können die verschiedenen Pfadstrategien diese grundlegende Kapazitätsüberschreitung nicht verhindern.
+
+Die Szenarien 5 bis 7 sind für den Vergleich der Traffic-Engineering-Verfahren besonders aussagekräftig. Bei Hotspot- und asymmetrischen Verkehrsmustern zeigen sich deutliche Unterschiede zwischen STANDARD beziehungsweise statischem Routing und den Verfahren, die mehrere Pfade besser ausnutzen.
+
+Die Resultate müssen immer im Zusammenhang mit der konkreten Topologie, der Verkehrsmatrix und der implementierten Routinglogik interpretiert werden.
 
 ## Projektstruktur
 
@@ -226,59 +189,43 @@ cloud-datacenter-traffic-engineering/
 │   └── evaluate_results.py
 │
 ├── results/
-│   ├── results_standard_*.csv
-│   ├── results_ecmp_*.csv
-│   ├── results_static_*.csv
-│   └── results_adaptive_*.csv
+│   ├── results_*_seed_*_run_*.csv
+│   └── summary_*_seed_*_run_*.csv
 │
 └── evaluation/
-    ├── experiment_summary.csv
-    ├── throughput_comparison.png
-    ├── throughput_comparison.pdf
-    ├── delay_comparison.png
-    ├── delay_comparison.pdf
-    ├── packet_loss_comparison.png
-    ├── packet_loss_comparison.pdf
-    ├── jitter_comparison.png
-    └── jitter_comparison.pdf
+    ├── all_experiment_results.csv
+    ├── experiment_statistics.csv
+    ├── relative_improvement_vs_standard.csv
+    ├── throughput_basis.{png,pdf}
+    ├── throughput_traffic_engineering.{png,pdf}
+    ├── delay_basis.{png,pdf}
+    ├── delay_traffic_engineering.{png,pdf}
+    ├── packet_loss_basis.{png,pdf}
+    ├── packet_loss_traffic_engineering.{png,pdf}
+    ├── jitter_basis.{png,pdf}
+    ├── jitter_traffic_engineering.{png,pdf}
+    ├── fairness_basis.{png,pdf}
+    └── fairness_traffic_engineering.{png,pdf}
 ```
+
+FlowMonitor-XML-Dateien, Routingtabellen und Logdateien werden nicht im Repository versioniert, da sie automatisch erzeugt werden können und für die zentrale Ergebnisanalyse nicht erforderlich sind.
 
 ## Voraussetzungen
 
-Für die Durchführung der Simulationen werden benötigt:
+Benötigt werden:
 
 - Linux oder WSL
-- ns-3
+- ns-3 mit Python-Unterstützung
 - Python 3
-- aktivierte ns-3-Python-Bindings
 - cppyy
 - pandas
 - matplotlib
 
-Die benötigten Python-Abhängigkeiten sind zusätzlich in `requirements.txt` dokumentiert.
-
-## Installation
-
-Repository klonen:
-
-```bash
-git clone <URL-DES-REPOSITORIES>
-cd cloud-datacenter-traffic-engineering
-```
-
-Python-Abhängigkeiten können anschließend installiert werden:
-
-```bash
-pip install -r requirements.txt
-```
-
-Für die eigentliche Simulation wird zusätzlich eine funktionierende ns-3-Installation mit Python-Unterstützung benötigt.
+Die Python-Abhängigkeiten der Auswertung sind in `requirements.txt` aufgeführt.
 
 ## Verwendung mit ns-3
 
-Die Simulation wurde während der Entwicklung innerhalb des ns-3-Projektverzeichnisses ausgeführt.
-
-Dazu können die Python-Dateien beispielsweise in den Python-Arbeitsbereich der lokalen ns-3-Installation kopiert werden.
+Die Simulationsskripte werden während der Entwicklung im ns-3-Projektverzeichnis ausgeführt.
 
 Beispiel:
 
@@ -286,47 +233,24 @@ Beispiel:
 cp simulation/datacenter.py ~/ns-3-dev/python/datacenter.py
 cp scripts/run_experiments.py ~/ns-3-dev/python/run_experiments.py
 cp scripts/evaluate_results.py ~/ns-3-dev/python/evaluate_results.py
-```
-
-Anschließend in das ns-3-Verzeichnis wechseln:
-
-```bash
 cd ~/ns-3-dev
 ```
 
-## Einzelne Simulation starten
+### Einzelnes Experiment
 
-Das allgemeine Schema lautet:
-
-```bash
-./ns3 run "python/datacenter.py ROUTING SZENARIO"
-```
-
-Beispiel für Standard-Routing und Szenario 1:
+Allgemeines Schema:
 
 ```bash
-./ns3 run "python/datacenter.py STANDARD 1"
+./ns3 run "python/datacenter.py STRATEGY SCENARIO [SEED] [RUN]"
 ```
 
-Beispiel für ECMP und Szenario 3:
+Beispiel:
 
 ```bash
-./ns3 run "python/datacenter.py ECMP 3"
+./ns3 run "python/datacenter.py ECMP 5 1 1"
 ```
 
-Beispiel für statisches Flow-Pinning und Szenario 2:
-
-```bash
-./ns3 run "python/datacenter.py STATIC 2"
-```
-
-Beispiel für lastabhängiges Routing und Szenario 4:
-
-```bash
-./ns3 run "python/datacenter.py ADAPTIVE 4"
-```
-
-### Verfügbare Routingstrategien
+Verfügbare Strategien:
 
 ```text
 STANDARD
@@ -335,61 +259,46 @@ STATIC
 ADAPTIVE
 ```
 
-### Verfügbare Szenarien
+Verfügbare Szenarien:
 
 ```text
 1 = Baseline
 2 = Mittlere Last
 3 = Hohe Last
 4 = Überlast
+5 = Hotspot
+6 = Asymmetrische Last
+7 = Dynamischer Hotspot
 ```
 
-## Alle Experimente ausführen
+### Experimentserie
 
-Aus dem ns-3-Hauptverzeichnis:
+Die gewünschte Versuchsmatrix wird in `run_experiments.py` konfiguriert.
+
+Ausführung:
 
 ```bash
 cd ~/ns-3-dev
 python3 python/run_experiments.py
 ```
 
-Das Skript führt automatisch alle 16 Kombinationen aus Routingstrategie und Lastszenario nacheinander aus.
-
-## Ergebnisse auswerten
-
-Nachdem alle Simulationen abgeschlossen wurden:
+### Ergebnisse auswerten
 
 ```bash
 cd ~/ns-3-dev
 python3 python/evaluate_results.py
 ```
 
-Die Auswertung kontrolliert die vorhandenen Ergebnisdateien und erzeugt anschließend die zusammengefasste CSV-Datei sowie die Vergleichsdiagramme.
-
 ## Reproduzierbarkeit
 
-Für einen fairen Vergleich werden alle Routingstrategien mit derselben:
+Für die Vergleichsläufe werden Topologie, Linkparameter, Paketgröße, Simulationskonfiguration und Messmethodik konstant gehalten. Die Routingstrategie bildet die zentrale experimentelle Variable.
 
-- Topologie
-- Link-Datenrate
-- Link-Verzögerung
-- Paketgröße
-- Simulationsdauer
-- Verkehrskonfiguration
-- Messmethodik
+Seed und Run-Nummer werden in den Ergebnisdateien gespeichert. Dadurch lässt sich die jeweilige Simulationskonfiguration eindeutig nachvollziehen.
 
-untersucht.
+Die gespeicherten CSV-Dateien ermöglichen außerdem eine erneute Auswertung, ohne sämtliche ns-3-Simulationen erneut durchführen zu müssen.
 
-Lediglich die Routingstrategie wird zwischen den jeweiligen Vergleichsläufen verändert.
+## Wissenschaftliche Einordnung
 
-Dadurch können Unterschiede in den Messergebnissen gezielt auf die untersuchte Routingkonfiguration zurückgeführt werden.
+Die Simulation bildet ein kontrolliertes Modell einer Spine-Leaf-Datacenter-Topologie ab. Die Ergebnisse sind daher als Vergleich der implementierten Routingstrategien innerhalb dieser Modellannahmen zu interpretieren und nicht als allgemeiner Leistungsnachweis für reale Produktionsnetzwerke.
 
-## Hinweise zur Interpretation
-
-Die aktuellen Hauptszenarien verwenden eine symmetrische Topologie und weitgehend symmetrische Datenströme.
-
-Daher können verschiedene Routingstrategien trotz unterschiedlicher Pfadauswahl sehr ähnliche Messergebnisse erzeugen.
-
-Insbesondere ist das implementierte lastabhängige Routing als einfache lastorientierte Flow-Zuweisung zu verstehen. Es handelt sich nicht um ein kontinuierliches dynamisches Re-Routing bereits laufender Datenströme.
-
-Die Ergebnisse sollten daher immer im Zusammenhang mit der verwendeten Topologie, den angebotenen Lasten und der konkreten Routingimplementierung interpretiert werden.
+Insbesondere die Ergebnisse der Hotspot-, asymmetrischen und dynamischen Lastszenarien dienen dazu, die Auswirkungen unterschiedlicher Pfadwahlverfahren unter gezielt erzeugten Engpasssituationen zu untersuchen.

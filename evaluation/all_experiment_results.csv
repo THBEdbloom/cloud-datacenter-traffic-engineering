@@ -1,0 +1,53 @@
+routing_strategy,scenario,scenario_name,seed,run_number,number_of_flows,total_tx_packets,total_rx_packets,total_lost_packets,packet_loss_percent,total_throughput_mbit_s,weighted_mean_delay_ms,weighted_mean_jitter_ms,jain_fairness_index,source_file
+ADAPTIVE,1,Szenario 1 - Baseline,1,1,1,24414,24414,0,0.0,102.329076,8.003372,0.0,1.0,summary_adaptive_szenario_1___baseline_seed_1_run_1.csv
+ECMP,1,Szenario 1 - Baseline,1,1,1,24414,24414,0,0.0,102.329076,8.003372,0.0,1.0,summary_ecmp_szenario_1___baseline_seed_1_run_1.csv
+STANDARD,1,Szenario 1 - Baseline,1,1,1,24414,24414,0,0.0,102.329076,8.003372,0.0,1.0,summary_standard_szenario_1___baseline_seed_1_run_1.csv
+STATIC,1,Szenario 1 - Baseline,1,1,1,24414,24414,0,0.0,102.329076,8.003372,0.0,1.0,summary_static_szenario_1___baseline_seed_1_run_1.csv
+ADAPTIVE,2,Szenario 2 - Mittlere Last,1,1,4,97656,97656,0,0.0,409.316304,8.003372,0.0,1.0,summary_adaptive_szenario_2___mittlere_last_seed_1_run_1.csv
+ECMP,2,Szenario 2 - Mittlere Last,1,1,4,97656,97656,0,0.0,409.316304,8.003372,0.0,1.0,summary_ecmp_szenario_2___mittlere_last_seed_1_run_1.csv
+STANDARD,2,Szenario 2 - Mittlere Last,1,1,4,97656,97656,0,0.0,409.316304,8.003372,0.0,1.0,summary_standard_szenario_2___mittlere_last_seed_1_run_1.csv
+STATIC,2,Szenario 2 - Mittlere Last,1,1,4,97656,97656,0,0.0,409.316304,8.003372,0.0,1.0,summary_static_szenario_2___mittlere_last_seed_1_run_1.csv
+ADAPTIVE,3,Szenario 3 - Hohe Last,1,1,4,1953124,1953124,0,0.0,8186.008907,8.003372,0.0,1.0,summary_adaptive_szenario_3___hohe_last_seed_1_run_1.csv
+ECMP,3,Szenario 3 - Hohe Last,1,1,4,1953124,1953124,0,0.0,8186.008907,8.003372,0.0,1.0,summary_ecmp_szenario_3___hohe_last_seed_1_run_1.csv
+STANDARD,3,Szenario 3 - Hohe Last,1,1,4,1953124,1953124,0,0.0,8186.008907,8.003372,0.0,1.0,summary_standard_szenario_3___hohe_last_seed_1_run_1.csv
+STATIC,3,Szenario 3 - Hohe Last,1,1,4,1953124,1953124,0,0.0,8186.008907,8.003372,0.0,1.0,summary_static_szenario_3___hohe_last_seed_1_run_1.csv
+ADAPTIVE,4,Szenario 4 - Überlast,1,1,4,11713028,9531272,2181756,18.626746,39772.631047,16.619903,0.000243,1.0,summary_adaptive_szenario_4___überlast_seed_1_run_1.csv
+ECMP,4,Szenario 4 - Überlast,1,1,4,11713028,9531272,2181756,18.626746,39775.106642,16.619631,0.000243,1.0,summary_ecmp_szenario_4___überlast_seed_1_run_1.csv
+STANDARD,4,Szenario 4 - Überlast,1,1,4,11713028,9531272,2181756,18.626746,39765.310026,16.620711,0.000243,1.0,summary_standard_szenario_4___überlast_seed_1_run_1.csv
+STATIC,4,Szenario 4 - Überlast,1,1,4,11713028,9531272,2181756,18.626746,39770.176651,16.620171,0.000243,1.0,summary_static_szenario_4___überlast_seed_1_run_1.csv
+ADAPTIVE,5,Szenario 5 - Hotspot,1,1,4,3906248,3906248,0,0.0,16372.001124,8.003372,0.0,1.0,summary_adaptive_szenario_5___hotspot_seed_1_run_1.csv
+ADAPTIVE,5,Szenario 5 - Hotspot,1,2,4,3906248,3906248,0,0.0,16372.001124,8.003372,0.0,1.0,summary_adaptive_szenario_5___hotspot_seed_1_run_2.csv
+ADAPTIVE,5,Szenario 5 - Hotspot,1,3,4,3906248,3906248,0,0.0,16372.001124,8.003372,0.0,1.0,summary_adaptive_szenario_5___hotspot_seed_1_run_3.csv
+ECMP,5,Szenario 5 - Hotspot,1,1,4,3906248,3906248,0,0.0,16371.999405,8.003734,0.000398,1.0,summary_ecmp_szenario_5___hotspot_seed_1_run_1.csv
+ECMP,5,Szenario 5 - Hotspot,1,2,4,3906248,3906248,0,0.0,16371.999163,8.003733,0.000398,1.0,summary_ecmp_szenario_5___hotspot_seed_1_run_2.csv
+ECMP,5,Szenario 5 - Hotspot,1,3,4,3906248,3906248,0,0.0,16371.998425,8.003733,0.000397,1.0,summary_ecmp_szenario_5___hotspot_seed_1_run_3.csv
+STANDARD,5,Szenario 5 - Hotspot,1,1,4,3906248,2382812,1523436,38.999982,9943.987403,13.303347,0.003301,1.0,summary_standard_szenario_5___hotspot_seed_1_run_1.csv
+STANDARD,5,Szenario 5 - Hotspot,1,2,4,3906248,2382812,1523436,38.999982,9943.987403,13.303347,0.003301,1.0,summary_standard_szenario_5___hotspot_seed_1_run_2.csv
+STANDARD,5,Szenario 5 - Hotspot,1,3,4,3906248,2382812,1523436,38.999982,9943.987403,13.303347,0.003301,1.0,summary_standard_szenario_5___hotspot_seed_1_run_3.csv
+STATIC,5,Szenario 5 - Hotspot,1,1,4,3906248,2382812,1523436,38.999982,9943.987403,13.303347,0.003301,1.0,summary_static_szenario_5___hotspot_seed_1_run_1.csv
+STATIC,5,Szenario 5 - Hotspot,1,2,4,3906248,2382812,1523436,38.999982,9943.987403,13.303347,0.003301,1.0,summary_static_szenario_5___hotspot_seed_1_run_2.csv
+STATIC,5,Szenario 5 - Hotspot,1,3,4,3906248,2382812,1523436,38.999982,9943.987403,13.303347,0.003301,1.0,summary_static_szenario_5___hotspot_seed_1_run_3.csv
+ADAPTIVE,6,Szenario 6 - Asymmetrische Last,1,1,4,4394797,4394797,0,0.0,18419.623755,8.003372,0.0,0.736351,summary_adaptive_szenario_6___asymmetrische_last_seed_1_run_1.csv
+ADAPTIVE,6,Szenario 6 - Asymmetrische Last,1,2,4,4394797,4394797,0,0.0,18419.623755,8.003372,0.0,0.736351,summary_adaptive_szenario_6___asymmetrische_last_seed_1_run_2.csv
+ADAPTIVE,6,Szenario 6 - Asymmetrische Last,1,3,4,4394797,4394797,0,0.0,18419.623755,8.003372,0.0,0.736351,summary_adaptive_szenario_6___asymmetrische_last_seed_1_run_3.csv
+ECMP,6,Szenario 6 - Asymmetrische Last,1,1,4,4394797,4394797,0,0.0,18419.622369,8.003668,0.000301,0.736351,summary_ecmp_szenario_6___asymmetrische_last_seed_1_run_1.csv
+ECMP,6,Szenario 6 - Asymmetrische Last,1,2,4,4394797,4394797,0,0.0,18419.623112,8.003668,0.0003,0.736351,summary_ecmp_szenario_6___asymmetrische_last_seed_1_run_2.csv
+ECMP,6,Szenario 6 - Asymmetrische Last,1,3,4,4394797,4394797,0,0.0,18419.622888,8.003668,0.000301,0.736351,summary_ecmp_szenario_6___asymmetrische_last_seed_1_run_3.csv
+STANDARD,6,Szenario 6 - Asymmetrische Last,1,1,4,4394797,2382799,2011998,45.781364,9948.230654,13.173285,0.002418,0.896477,summary_standard_szenario_6___asymmetrische_last_seed_1_run_1.csv
+STANDARD,6,Szenario 6 - Asymmetrische Last,1,2,4,4394797,2382799,2011998,45.781364,9948.230654,13.173285,0.002418,0.896477,summary_standard_szenario_6___asymmetrische_last_seed_1_run_2.csv
+STANDARD,6,Szenario 6 - Asymmetrische Last,1,3,4,4394797,2382799,2011998,45.781364,9948.230654,13.173285,0.002418,0.896477,summary_standard_szenario_6___asymmetrische_last_seed_1_run_3.csv
+STATIC,6,Szenario 6 - Asymmetrische Last,1,1,4,4394797,3359257,1035540,23.562863,14036.409733,12.366405,0.000852,0.822188,summary_static_szenario_6___asymmetrische_last_seed_1_run_1.csv
+STATIC,6,Szenario 6 - Asymmetrische Last,1,2,4,4394797,3359257,1035540,23.562863,14036.409733,12.366405,0.000852,0.822188,summary_static_szenario_6___asymmetrische_last_seed_1_run_2.csv
+STATIC,6,Szenario 6 - Asymmetrische Last,1,3,4,4394797,3359257,1035540,23.562863,14036.409733,12.366405,0.000852,0.822188,summary_static_szenario_6___asymmetrische_last_seed_1_run_3.csv
+ADAPTIVE,7,Szenario 7 - Dynamischer Hotspot,1,1,4,3906248,3777840,128408,3.287246,15833.811374,9.086954,0.035645,0.999615,summary_adaptive_szenario_7___dynamischer_hotspot_seed_1_run_1.csv
+ADAPTIVE,7,Szenario 7 - Dynamischer Hotspot,1,2,4,3906248,3777840,128408,3.287246,15833.811374,9.086954,0.035645,0.999615,summary_adaptive_szenario_7___dynamischer_hotspot_seed_1_run_2.csv
+ADAPTIVE,7,Szenario 7 - Dynamischer Hotspot,1,3,4,3906248,3777840,128408,3.287246,15833.811374,9.086954,0.035645,0.999615,summary_adaptive_szenario_7___dynamischer_hotspot_seed_1_run_3.csv
+ECMP,7,Szenario 7 - Dynamischer Hotspot,1,1,4,3906248,3906248,0,0.0,16371.999405,8.003734,0.000398,1.0,summary_ecmp_szenario_7___dynamischer_hotspot_seed_1_run_1.csv
+ECMP,7,Szenario 7 - Dynamischer Hotspot,1,2,4,3906248,3906248,0,0.0,16371.999163,8.003733,0.000398,1.0,summary_ecmp_szenario_7___dynamischer_hotspot_seed_1_run_2.csv
+ECMP,7,Szenario 7 - Dynamischer Hotspot,1,3,4,3906248,3906248,0,0.0,16371.998425,8.003733,0.000397,1.0,summary_ecmp_szenario_7___dynamischer_hotspot_seed_1_run_3.csv
+STANDARD,7,Szenario 7 - Dynamischer Hotspot,1,1,4,3906248,2382812,1523436,38.999982,9943.987403,13.303347,0.003301,1.0,summary_standard_szenario_7___dynamischer_hotspot_seed_1_run_1.csv
+STANDARD,7,Szenario 7 - Dynamischer Hotspot,1,2,4,3906248,2382812,1523436,38.999982,9943.987403,13.303347,0.003301,1.0,summary_standard_szenario_7___dynamischer_hotspot_seed_1_run_2.csv
+STANDARD,7,Szenario 7 - Dynamischer Hotspot,1,3,4,3906248,2382812,1523436,38.999982,9943.987403,13.303347,0.003301,1.0,summary_standard_szenario_7___dynamischer_hotspot_seed_1_run_3.csv
+STATIC,7,Szenario 7 - Dynamischer Hotspot,1,1,4,3906248,2382812,1523436,38.999982,9943.987403,13.303347,0.003301,1.0,summary_static_szenario_7___dynamischer_hotspot_seed_1_run_1.csv
+STATIC,7,Szenario 7 - Dynamischer Hotspot,1,2,4,3906248,2382812,1523436,38.999982,9943.987403,13.303347,0.003301,1.0,summary_static_szenario_7___dynamischer_hotspot_seed_1_run_2.csv
+STATIC,7,Szenario 7 - Dynamischer Hotspot,1,3,4,3906248,2382812,1523436,38.999982,9943.987403,13.303347,0.003301,1.0,summary_static_szenario_7___dynamischer_hotspot_seed_1_run_3.csv

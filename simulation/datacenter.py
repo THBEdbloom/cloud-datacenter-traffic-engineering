@@ -79,6 +79,21 @@ SIMULATION_END = 4.0
 
 
 # =========================================================
+# Dynamisches lastabhängiges Routing
+#
+# Das adaptive Routing überprüft während der Simulation
+# regelmäßig die Auslastung der Spine-Leaf-Pfade.
+#
+# Ein Pfadwechsel erfolgt nur, wenn der alternative Pfad
+# ausreichend geringer belastet ist. Dadurch werden
+# unnötige häufige Routingwechsel vermieden.
+# =========================================================
+
+ADAPTIVE_INTERVAL = 0.1       # Messintervall in Sekunden
+ADAPTIVE_HYSTERESIS = 0.15    # mindestens 15 % Verbesserung
+
+
+# =========================================================
 # SIMULATIONSKONFIGURATION
 #
 # Für eine Simulation müssen normalerweise nur zwei
@@ -123,6 +138,21 @@ SCENARIO = 1
 
 
 # =========================================================
+# Zufallssteuerung
+#
+# SEED bestimmt den grundlegenden Zufallszahlengenerator.
+# RUN_NUMBER erzeugt reproduzierbare unabhängige
+# Wiederholungen eines Experiments.
+#
+# Für Versuchsreihen bleibt SEED normalerweise konstant,
+# während RUN_NUMBER variiert wird.
+# =========================================================
+
+SEED = 1
+RUN_NUMBER = 1
+
+
+# =========================================================
 # Optionale Steuerung über Kommandozeilenparameter
 #
 # Beispiel:
@@ -132,9 +162,25 @@ SCENARIO = 1
 # Dadurch werden die Standardwerte überschrieben.
 # =========================================================
 
-if len(sys.argv) == 3:
+# Strategie und Szenario
+if len(sys.argv) >= 3:
     ROUTING_STRATEGY = sys.argv[1].upper()
     SCENARIO = int(sys.argv[2])
+
+# Optionaler Seed
+if len(sys.argv) >= 4:
+    SEED = int(sys.argv[3])
+
+# Optionale Run-Nummer
+if len(sys.argv) >= 5:
+    RUN_NUMBER = int(sys.argv[4])
+
+# Zu viele Parameter abfangen
+if len(sys.argv) > 5:
+    raise ValueError(
+        "Verwendung: datacenter.py "
+        "<STRATEGY> <SCENARIO> [SEED] [RUN]"
+    )
 
 
 # =========================================================
@@ -148,79 +194,290 @@ SCENARIOS = {
     # =====================================================
     # Szenario 1 - Baseline
     #
-    # Ein einzelner Cross-Leaf-Datenstrom.
-    # Der Datenverkehr läuft von Leaf 0 zu Leaf 3.
+    # Einfacher Referenzfall ohne relevante Netzwerklast.
     # =====================================================
 
     1: {
         "name": "Szenario 1 - Baseline",
-        "flow_rate": "100Mbps",
 
         "flows": [
-            (0, 15),
+            {
+                "source": 0,
+                "destination": 15,
+                "rate": "100Mbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
         ],
     },
-
 
     # =====================================================
     # Szenario 2 - Mittlere Last
     #
-    # Vier parallele Cross-Leaf-Datenströme.
-    # Alle vier Leaves sind am Datenverkehr beteiligt.
+    # Symmetrischer Datenverkehr mit geringer Last.
     # =====================================================
 
     2: {
         "name": "Szenario 2 - Mittlere Last",
-        "flow_rate": "100Mbps",
 
         "flows": [
-            (0, 15),   # Leaf 0 -> Leaf 3
-            (4, 11),   # Leaf 1 -> Leaf 2
-            (8, 3),    # Leaf 2 -> Leaf 0
-            (12, 7),   # Leaf 3 -> Leaf 1
+            {
+                "source": 0,
+                "destination": 15,
+                "rate": "100Mbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 4,
+                "destination": 11,
+                "rate": "100Mbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 8,
+                "destination": 3,
+                "rate": "100Mbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 12,
+                "destination": 7,
+                "rate": "100Mbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
         ],
     },
-
 
     # =====================================================
     # Szenario 3 - Hohe Last
     #
-    # Gleiche Kommunikationsbeziehungen wie in Szenario 2,
-    # jedoch mit deutlich höherer Datenrate.
-    #
-    # Dadurch lässt sich der Einfluss steigender Last
-    # unabhängig vom Kommunikationsmuster untersuchen.
+    # Gleiches Kommunikationsmuster wie Szenario 2,
+    # aber deutlich höhere angebotene Last.
     # =====================================================
 
     3: {
         "name": "Szenario 3 - Hohe Last",
-        "flow_rate": "2Gbps",
 
         "flows": [
-            (0, 15),
-            (4, 11),
-            (8, 3),
-            (12, 7),
+            {
+                "source": 0,
+                "destination": 15,
+                "rate": "2Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 4,
+                "destination": 11,
+                "rate": "2Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 8,
+                "destination": 3,
+                "rate": "2Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 12,
+                "destination": 7,
+                "rate": "2Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
         ],
     },
-
 
     # =====================================================
     # Szenario 4 - Überlast
     #
-    # Identische Kommunikationsbeziehungen mit sehr hoher
-    # Datenrate zur gezielten Erzeugung von Engpässen.
+    # Symmetrische Überlast als Belastungsgrenze.
+    # Jeder angebotene Flow liegt oberhalb der
+    # Kapazität eines einzelnen 10-Gbit/s-Pfades.
     # =====================================================
 
     4: {
         "name": "Szenario 4 - Überlast",
-        "flow_rate": "12Gbps",
 
         "flows": [
-            (0, 15),
-            (4, 11),
-            (8, 3),
-            (12, 7),
+            {
+                "source": 0,
+                "destination": 15,
+                "rate": "12Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 4,
+                "destination": 11,
+                "rate": "12Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 8,
+                "destination": 3,
+                "rate": "12Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 12,
+                "destination": 7,
+                "rate": "12Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+        ],
+    },
+
+    # =====================================================
+    # Szenario 5 - Hotspot
+    #
+    # Mehrere Sender kommunizieren gleichzeitig mit Hosts
+    # am selben Ziel-Leaf.
+    #
+    # Dadurch entsteht eine konzentrierte Belastung in
+    # Richtung Leaf 3. Das Szenario untersucht, wie gut
+    # die Routingstrategien parallele Pfade nutzen können.
+    # =====================================================
+
+    5: {
+        "name": "Szenario 5 - Hotspot",
+
+        "flows": [
+            {
+                "source": 0,
+                "destination": 12,
+                "rate": "4Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 4,
+                "destination": 13,
+                "rate": "4Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 8,
+                "destination": 14,
+                "rate": "4Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 1,
+                "destination": 15,
+                "rate": "4Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+        ],
+    },
+
+    # =====================================================
+    # Szenario 6 - Asymmetrische Last
+    #
+    # Vier unterschiedlich große Flows laufen gleichzeitig
+    # in Richtung Leaf 3.
+    #
+    # Die ungleichen Datenraten prüfen, ob eine Strategie
+    # nicht nur die Anzahl der Flows, sondern auch deren
+    # angebotene Last sinnvoll verteilen kann.
+    # =====================================================
+
+    6: {
+        "name": "Szenario 6 - Asymmetrische Last",
+
+        "flows": [
+            {
+                "source": 2,
+                "destination": 12,
+                "rate": "8Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 5,
+                "destination": 13,
+                "rate": "6Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 9,
+                "destination": 14,
+                "rate": "3Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 3,
+                "destination": 15,
+                "rate": "1Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+        ],
+    },
+
+    # =====================================================
+    # Szenario 7 - Dynamischer Hotspot
+    #
+    # Zunächst starten mehrere Datenströme mit moderater
+    # Last. Während der laufenden Simulation kommen weitere
+    # Datenströme hinzu.
+    #
+    # Dadurch verändert sich die Netzwerklast nach der
+    # ursprünglichen Pfadwahl. Das Szenario untersucht,
+    # ob eine adaptive Routingstrategie auf eine während
+    # des Betriebs entstandene Lastverschiebung reagieren
+    # kann.
+    # =====================================================
+
+    7: {
+        "name": "Szenario 7 - Dynamischer Hotspot",
+
+        "flows": [
+            {
+                "source": 0,
+                "destination": 12,
+                "rate": "4Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+            {
+                "source": 4,
+                "destination": 13,
+                "rate": "4Gbps",
+                "start": 1.0,
+                "stop": 3.0,
+            },
+
+            # Zusätzliche Last entsteht erst während
+            # der laufenden Simulation.
+            {
+                "source": 8,
+                "destination": 14,
+                "rate": "4Gbps",
+                "start": 1.3,
+                "stop": 3.0,
+            },
+            {
+                "source": 1,
+                "destination": 15,
+                "rate": "4Gbps",
+                "start": 1.3,
+                "stop": 3.0,
+            },
         ],
     },
 }
@@ -254,10 +511,37 @@ SCENARIOS = {
 # =========================================================
 
 STATIC_FLOW_SPINES = {
-    (0, 15): 0,   # Leaf 0 -> Leaf 3 über Spine 0
-    (4, 11): 1,   # Leaf 1 -> Leaf 2 über Spine 1
-    (8, 3): 2,    # Leaf 2 -> Leaf 0 über Spine 2
-    (12, 7): 3,   # Leaf 3 -> Leaf 1 über Spine 3
+
+    # Szenarien 1-4
+    (0, 15): 0,
+    (4, 11): 0,
+    (8, 3): 1,
+    (12, 7): 1,
+
+    # Szenario 5 - Hotspot
+    #
+    # Bewusst feste und reproduzierbare Verteilung
+    # der vier Hotspot-Flows auf alle vier Spines.
+    (0, 12): 0,
+    (4, 13): 1,
+    (8, 14): 2,
+    (1, 15): 3,
+
+    # Szenario 6 - Asymmetrische Last
+    #
+    # Feste Pfade ohne Kenntnis der aktuellen Flow-Raten.
+    # Dadurch können sich bei veränderter Last ungünstige
+    # Konzentrationen auf einzelnen Pfaden ergeben.
+    (2, 12): 0,
+    (5, 13): 0,
+    (9, 14): 1,
+    (3, 15): 1,
+
+    # Szenario 7 - Dynamischer Hotspot
+    (0, 12): 0,
+    (4, 13): 0,
+    (8, 14): 0,
+    (1, 15): 0,
 }
 
 
@@ -271,15 +555,7 @@ ACTIVE_SCENARIO = SCENARIOS[SCENARIO]
 
 SCENARIO_NAME = ACTIVE_SCENARIO["name"]
 
-FLOW_RATE = ACTIVE_SCENARIO["flow_rate"]
-
-TRAFFIC_FLOWS = [
-
-    (source, destination, FLOW_RATE)
-
-    for source, destination in ACTIVE_SCENARIO["flows"]
-
-]
+TRAFFIC_FLOWS = ACTIVE_SCENARIO["flows"]
 
 def validate_configuration() -> None:
     if NUM_SPINES < 1:
@@ -373,7 +649,9 @@ def configure_static_routes(
 
     # Für jeden definierten Datenstrom wird ein
     # Sender und ein Empfänger erzeugt.
-    for source_host, destination_host, _data_rate in TRAFFIC_FLOWS:
+    for flow in TRAFFIC_FLOWS:
+        source_host = flow["source"]
+        destination_host = flow["destination"]
 
         # Bestimmen, an welchem Leaf Quelle und Ziel angeschlossen sind.
         source_leaf_index = source_host // hosts_per_leaf
@@ -457,11 +735,334 @@ def configure_static_routes(
             f"Interface {output_interface})"
         )
 
+# =========================================================
+# Messdaten für dynamisches Routing
+# =========================================================
+
+ADAPTIVE_LINK_BYTES = {}
+ADAPTIVE_PREVIOUS_BYTES = {}
+
+
+def adaptive_phy_tx_end(link_index, packet):
+    """
+    Zählt die tatsächlich übertragenen Bytes eines
+    Spine-Leaf-Links.
+    """
+    packet_size = int(packet.GetSize())
+
+    ADAPTIVE_LINK_BYTES[link_index] = (
+        ADAPTIVE_LINK_BYTES.get(link_index, 0)
+        + packet_size
+    )
+
+def calculate_adaptive_link_loads(
+    spine_leaf_links,
+) -> dict:
+    """
+    Bestimmt die aktuelle Queue-Belegung aller
+    Spine-Leaf-Links.
+
+    Für jeden Link werden beide Übertragungsrichtungen
+    betrachtet. Als Lastwert wird die größere aktuelle
+    Queue-Belegung in Bytes verwendet.
+    """
+
+    link_loads = {}
+
+    for link_index, devices in enumerate(spine_leaf_links):
+
+        spine_device = devices.Get(0)
+        leaf_device = devices.Get(1)
+
+        spine_queue = spine_device.GetQueue()
+        leaf_queue = leaf_device.GetQueue()
+
+        spine_queue_bytes = int(
+            spine_queue.GetNBytes()
+        )
+
+        leaf_queue_bytes = int(
+            leaf_queue.GetNBytes()
+        )
+
+        link_loads[link_index] = max(
+            spine_queue_bytes,
+            leaf_queue_bytes,
+        )
+
+    return link_loads
+
+def get_adaptive_path_load(
+    spine_index: int,
+    source_leaf_index: int,
+    destination_leaf_index: int,
+    link_loads: dict,
+) -> float:
+    """
+    Bestimmt die Last eines möglichen Spine-Pfades.
+
+    Für einen Pfad Leaf A -> Spine X -> Leaf B wird
+    die höhere Last der beiden beteiligten
+    Spine-Leaf-Links verwendet.
+    """
+
+    source_link_index = (
+        spine_index * NUM_LEAVES
+        + source_leaf_index
+    )
+
+    destination_link_index = (
+        spine_index * NUM_LEAVES
+        + destination_leaf_index
+    )
+
+    source_load = link_loads.get(
+        source_link_index,
+        0.0,
+    )
+
+    destination_load = link_loads.get(
+        destination_link_index,
+        0.0,
+    )
+
+    return max(
+        source_load,
+        destination_load,
+    )
+    
+
+def update_adaptive_routes(
+    leaves,
+    spine_leaf_interfaces,
+    leaf_host_interfaces,
+    spine_leaf_links,
+    flow_spines,
+) -> None:
+    """
+    Überprüft während der Simulation die aktuelle
+    Queue-Belegung der Spine-Leaf-Pfade und passt
+    bei Bedarf die Flow-Routen an.
+
+    Es werden nur Datenströme berücksichtigt, die
+    zum aktuellen Simulationszeitpunkt aktiv sind.
+
+    Innerhalb einer Adaptionsrunde wird ein Spine,
+    auf den bereits ein Flow verschoben wurde, für
+    weitere Verschiebungen zunächst nicht erneut
+    verwendet. Dadurch wird verhindert, dass mehrere
+    Flows gleichzeitig auf denselben scheinbar freien
+    Spine wechseln.
+    """
+
+    # Aktuelle Queue-Belegung aller Spine-Leaf-Links messen.
+    link_loads = calculate_adaptive_link_loads(
+        spine_leaf_links
+    )
+
+    static_helper = ns.Ipv4StaticRoutingHelper()
+    hosts_per_leaf = NUM_HOSTS // NUM_LEAVES
+
+    current_time = ns.Simulator.Now().GetSeconds()
+
+    # Merkt sich, welche Spines während dieser
+    # Adaptionsrunde bereits Ziel einer Verschiebung waren.
+    used_spines_this_round = set()
+
+    for flow in TRAFFIC_FLOWS:
+        source_host = flow["source"]
+        destination_host = flow["destination"]
+        flow_start = flow["start"]
+        flow_stop = flow["stop"]
+
+        # Nur momentan tatsächlich aktive Flows betrachten.
+        if not flow_start <= current_time < flow_stop:
+            continue
+
+        source_leaf_index = (
+            source_host // hosts_per_leaf
+        )
+
+        destination_leaf_index = (
+            destination_host // hosts_per_leaf
+        )
+
+        # Intra-Leaf-Verkehr benötigt keinen Spine.
+        if source_leaf_index == destination_leaf_index:
+            continue
+
+        flow_key = (
+            source_host,
+            destination_host,
+        )
+
+        current_spine = flow_spines[flow_key]
+
+        # Aktuelle Queue-Last aller möglichen Pfade bestimmen.
+        path_loads = {}
+
+        for spine_index in range(NUM_SPINES):
+            path_loads[spine_index] = get_adaptive_path_load(
+                spine_index,
+                source_leaf_index,
+                destination_leaf_index,
+                link_loads,
+            )
+
+        # Spines, auf die in dieser Runde bereits ein Flow
+        # verschoben wurde, zunächst von weiteren
+        # Verschiebungen ausschließen.
+        candidate_spines = [
+            spine_index
+            for spine_index in range(NUM_SPINES)
+            if spine_index not in used_spines_this_round
+        ]
+
+        # Falls bereits alle Spines verwendet wurden,
+        # stehen wieder alle Pfade zur Auswahl.
+        if not candidate_spines:
+            candidate_spines = list(
+                range(NUM_SPINES)
+            )
+
+        best_spine = min(
+            candidate_spines,
+            key=lambda index: path_loads[index],
+        )
+
+        current_load = path_loads[current_spine]
+        best_load = path_loads[best_spine]
+
+        # Bereits auf dem ausgewählten Pfad.
+        if best_spine == current_spine:
+            continue
+
+        # Kein Wechsel, wenn der alternative Pfad
+        # nicht tatsächlich geringer belastet ist.
+        if best_load >= current_load:
+            continue
+
+        # Hysterese:
+        # Der alternative Pfad muss deutlich besser sein.
+        required_improvement = (
+            current_load * ADAPTIVE_HYSTERESIS
+        )
+
+        if (
+            current_load > 0.0
+            and best_load
+            > current_load - required_improvement
+        ):
+            continue
+
+        # =================================================
+        # Route auf den neuen Spine umstellen
+        # =================================================
+
+        link_index = (
+            best_spine * NUM_LEAVES
+            + source_leaf_index
+        )
+
+        gateway_address = spine_leaf_interfaces[
+            link_index
+        ].GetAddress(0)
+
+        destination_address = leaf_host_interfaces[
+            destination_host
+        ].GetAddress(1)
+
+        source_leaf_ipv4 = leaves.Get(
+            source_leaf_index
+        ).GetObject[ns.Ipv4]()
+
+        static_routing = static_helper.GetStaticRouting(
+            source_leaf_ipv4
+        )
+
+        output_interface = (
+            FIRST_SPINE_INTERFACE
+            + best_spine
+        )
+
+        # Vorhandene host-spezifische Route zum Ziel entfernen.
+        for route_index in reversed(
+            range(static_routing.GetNRoutes())
+        ):
+            route = static_routing.GetRoute(
+                route_index
+            )
+
+            if (
+                route.IsHost()
+                and route.GetDest()
+                == destination_address
+            ):
+                static_routing.RemoveRoute(
+                    route_index
+                )
+
+        # Neue Route über den ausgewählten Spine eintragen.
+        static_routing.AddHostRouteTo(
+            destination_address,
+            gateway_address,
+            output_interface,
+        )
+
+        # Neue Zuordnung speichern.
+        flow_spines[flow_key] = best_spine
+
+        # Diesen Spine innerhalb dieser Adaptionsrunde
+        # für weitere Verschiebungen sperren.
+        used_spines_this_round.add(
+            best_spine
+        )
+
+        print(
+            f"[ADAPTIVE "
+            f"{ns.Simulator.Now().GetSeconds():.3f}s] "
+            f"Host {source_host} -> Host {destination_host}: "
+            f"Spine{current_spine} -> Spine{best_spine} "
+            f"(Queue: {current_load / 1024.0:.1f} -> "
+            f"{best_load / 1024.0:.1f} KiB)"
+        )
+
+class AdaptiveRoutingEvent(ns.EventImpl):
+    """
+    ns-3-Ereignis zur dynamischen Aktualisierung
+    der adaptiven Routen während der Simulation.
+    """
+
+    def __init__(
+        self,
+        leaves,
+        spine_leaf_interfaces,
+        leaf_host_interfaces,
+        spine_leaf_links,
+        flow_spines,
+    ):
+        super().__init__()
+
+        self.leaves = leaves
+        self.spine_leaf_interfaces = spine_leaf_interfaces
+        self.leaf_host_interfaces = leaf_host_interfaces
+        self.spine_leaf_links = spine_leaf_links
+        self.flow_spines = flow_spines
+
+    def Notify(self):
+        update_adaptive_routes(
+            self.leaves,
+            self.spine_leaf_interfaces,
+            self.leaf_host_interfaces,
+            self.spine_leaf_links,
+            self.flow_spines,
+        )
+
 def configure_adaptive_routes(
     leaves,
     spine_leaf_interfaces,
     leaf_host_interfaces,
-) -> None:
+) -> dict:
     """
     Konfiguriert eine lastabhängige Pfadzuweisung.
 
@@ -484,9 +1085,15 @@ def configure_adaptive_routes(
     # Bereits zugewiesene angebotene Last jedes Spines in Bit/s.
     spine_loads = [0.0 for _ in range(NUM_SPINES)]
 
+    flow_spines = {}
+
     print("\nLastabhängige Pfadzuordnung:")
 
-    for source_host, destination_host, data_rate in TRAFFIC_FLOWS:
+    for flow in TRAFFIC_FLOWS:
+        source_host = flow["source"]
+        destination_host = flow["destination"]
+        data_rate = flow["rate"]
+        flow_start = flow["start"]
 
         # Zugehörige Leaves von Quelle und Ziel bestimmen.
         source_leaf_index = source_host // hosts_per_leaf
@@ -500,11 +1107,19 @@ def configure_adaptive_routes(
             )
             continue
 
-        # Spine mit der momentan geringsten zugewiesenen Last wählen.
-        spine_index = min(
-            range(NUM_SPINES),
-            key=lambda index: spine_loads[index],
-        )
+        # Flows, die bereits zum regulären Client-Start aktiv sind,
+        # werden lastabhängig initial verteilt.
+        #
+        # Später startende Flows erhalten zunächst einen
+        # deterministischen Standardpfad. Ihre zukünftige Last
+        # wird bei der initialen Lastberechnung nicht berücksichtigt.
+        if flow_start <= CLIENT_START:
+            spine_index = min(
+                range(NUM_SPINES),
+                key=lambda index: spine_loads[index],
+            )
+        else:
+            spine_index = 0
 
         flow_rate_bps = data_rate_to_bps(data_rate)
 
@@ -551,7 +1166,12 @@ def configure_adaptive_routes(
 
         # Die angebotene Datenrate dieses Flows anschließend
         # der Last des ausgewählten Spines zurechnen.
-        spine_loads[spine_index] += flow_rate_bps
+        if flow_start <= CLIENT_START:
+            spine_loads[spine_index] += flow_rate_bps
+
+        flow_spines[
+            (source_host, destination_host)
+        ] = spine_index
 
         print(
             f"Host {source_host} -> Host {destination_host} "
@@ -569,6 +1189,8 @@ def configure_adaptive_routes(
             f"Spine {spine_index}: "
             f"{load_bps / 1_000_000_000.0:.3f} Gbit/s"
         )
+
+    return flow_spines
 
 def calculate_flow_metrics(stats) -> dict:
     tx_packets = int(stats.txPackets)
@@ -620,18 +1242,48 @@ def calculate_flow_metrics(stats) -> dict:
 
 
 def write_flow_results(flow_stats, filename: str) -> None:
-    with open(filename, "w", newline="", encoding="utf-8") as csv_file:
+    """
+    Schreibt die Ergebnisse aller einzelnen Flows in eine CSV-Datei
+    und berechnet zusätzlich aggregierte Kennzahlen des gesamten
+    Experiments.
+    """
+
+    total_tx_packets = 0
+    total_rx_packets = 0
+    total_lost_packets = 0
+    total_tx_bytes = 0
+    total_rx_bytes = 0
+
+    total_delay_seconds = 0.0
+    total_jitter_seconds = 0.0
+    total_jitter_samples = 0
+
+    flow_throughputs = []
+
+    with open(
+        filename,
+        "w",
+        newline="",
+        encoding="utf-8",
+    ) as csv_file:
+
         writer = csv.writer(csv_file)
+
         writer.writerow([
-            "flow_id", "tx_packets", "rx_packets", "lost_packets",
-            "tx_bytes", "rx_bytes", "packet_loss_percent",
-            "throughput_mbit_s", "mean_delay_ms", "mean_jitter_ms",
+            "flow_id",
+            "tx_packets",
+            "rx_packets",
+            "lost_packets",
+            "tx_bytes",
+            "rx_bytes",
+            "packet_loss_percent",
+            "throughput_mbit_s",
+            "mean_delay_ms",
+            "mean_jitter_ms",
         ])
 
         for flow_id, stats in flow_stats:
-            """
-            Berechnet alle Kennzahlen eines Flows.
-            """
+
             metrics = calculate_flow_metrics(stats)
 
             writer.writerow([
@@ -647,14 +1299,319 @@ def write_flow_results(flow_stats, filename: str) -> None:
                 f'{metrics["mean_jitter_ms"]:.6f}',
             ])
 
+            # =================================================
+            # Aggregierte Messwerte sammeln
+            # =================================================
+
+            total_tx_packets += metrics["tx_packets"]
+            total_rx_packets += metrics["rx_packets"]
+            total_lost_packets += metrics["lost_packets"]
+
+            total_tx_bytes += metrics["tx_bytes"]
+            total_rx_bytes += metrics["rx_bytes"]
+
+            total_delay_seconds += (
+                stats.delaySum.GetSeconds()
+            )
+
+            total_jitter_seconds += (
+                stats.jitterSum.GetSeconds()
+            )
+
+            if metrics["rx_packets"] > 1:
+                total_jitter_samples += (
+                    metrics["rx_packets"] - 1
+                )
+
+            flow_throughputs.append(
+                metrics["throughput_mbit_s"]
+            )
+
             print(f"\nFlow {int(flow_id)}")
-            print(f'  Gesendete Pakete : {metrics["tx_packets"]}')
-            print(f'  Empfangene Pakete: {metrics["rx_packets"]}')
-            print(f'  Verlorene Pakete : {metrics["lost_packets"]}')
-            print(f'  Paketverlust      : {metrics["packet_loss_percent"]:.2f} %')
-            print(f'  Durchsatz         : {metrics["throughput_mbit_s"]:.3f} Mbit/s')
-            print(f'  Mittlere Laufzeit : {metrics["mean_delay_ms"]:.3f} ms')
-            print(f'  Mittlerer Jitter  : {metrics["mean_jitter_ms"]:.3f} ms')
+            print(
+                f'  Gesendete Pakete : '
+                f'{metrics["tx_packets"]}'
+            )
+            print(
+                f'  Empfangene Pakete: '
+                f'{metrics["rx_packets"]}'
+            )
+            print(
+                f'  Verlorene Pakete : '
+                f'{metrics["lost_packets"]}'
+            )
+            print(
+                f'  Paketverlust      : '
+                f'{metrics["packet_loss_percent"]:.2f} %'
+            )
+            print(
+                f'  Durchsatz         : '
+                f'{metrics["throughput_mbit_s"]:.3f} Mbit/s'
+            )
+            print(
+                f'  Mittlere Laufzeit : '
+                f'{metrics["mean_delay_ms"]:.3f} ms'
+            )
+            print(
+                f'  Mittlerer Jitter  : '
+                f'{metrics["mean_jitter_ms"]:.3f} ms'
+            )
+
+    # =========================================================
+    # Gesamtergebnis des Experiments
+    # =========================================================
+
+    total_throughput_mbit_s = sum(
+        flow_throughputs
+    )
+
+    total_packet_loss_percent = (
+        (
+            (total_tx_packets - total_rx_packets)
+            / total_tx_packets
+        )
+        * 100.0
+        if total_tx_packets > 0
+        else 0.0
+    )
+
+    weighted_mean_delay_ms = (
+        total_delay_seconds
+        / total_rx_packets
+        * 1000.0
+        if total_rx_packets > 0
+        else 0.0
+    )
+
+    weighted_mean_jitter_ms = (
+        total_jitter_seconds
+        / total_jitter_samples
+        * 1000.0
+        if total_jitter_samples > 0
+        else 0.0
+    )
+
+    # Jain's Fairness Index
+    #
+    # 1.0 bedeutet perfekte Gleichverteilung
+    # des gemessenen Flow-Durchsatzes.
+    if flow_throughputs:
+        throughput_sum = sum(
+            flow_throughputs
+        )
+
+        throughput_square_sum = sum(
+            throughput ** 2
+            for throughput in flow_throughputs
+        )
+
+        fairness_index = (
+            throughput_sum ** 2
+            / (
+                len(flow_throughputs)
+                * throughput_square_sum
+            )
+            if throughput_square_sum > 0.0
+            else 0.0
+        )
+    else:
+        fairness_index = 0.0
+
+    print("\n==========================================")
+    print("Aggregierte Messergebnisse")
+    print("==========================================")
+
+    print(
+        f"Gesamtdurchsatz     : "
+        f"{total_throughput_mbit_s:.3f} Mbit/s"
+    )
+
+    print(
+        f"Gesamtpaketverlust  : "
+        f"{total_packet_loss_percent:.3f} %"
+    )
+
+    print(
+        f"Gewichtete Latenz   : "
+        f"{weighted_mean_delay_ms:.3f} ms"
+    )
+
+    print(
+        f"Gewichteter Jitter  : "
+        f"{weighted_mean_jitter_ms:.6f} ms"
+    )
+
+    print(
+        f"Jain Fairness Index : "
+        f"{fairness_index:.6f}"
+    )
+
+    print(
+        f"Gesendete Pakete    : "
+        f"{total_tx_packets}"
+    )
+
+    print(
+        f"Empfangene Pakete   : "
+        f"{total_rx_packets}"
+    )
+
+    print(
+        f"Verlorene Pakete    : "
+        f"{total_lost_packets}"
+    )
+
+def write_summary_results(
+    flow_stats,
+    filename: str,
+) -> None:
+    """
+    Schreibt die aggregierten Kennzahlen einer Simulation
+    in eine separate CSV-Datei.
+
+    Diese Datei dient später zur automatisierten Auswertung
+    mehrerer Strategien, Szenarien und Wiederholungen.
+    """
+
+    total_tx_packets = 0
+    total_rx_packets = 0
+    total_lost_packets = 0
+
+    total_delay_seconds = 0.0
+    total_jitter_seconds = 0.0
+    total_jitter_samples = 0
+
+    flow_throughputs = []
+
+    for flow_id, stats in flow_stats:
+
+        metrics = calculate_flow_metrics(stats)
+
+        total_tx_packets += metrics["tx_packets"]
+        total_rx_packets += metrics["rx_packets"]
+        total_lost_packets += metrics["lost_packets"]
+
+        total_delay_seconds += (
+            stats.delaySum.GetSeconds()
+        )
+
+        total_jitter_seconds += (
+            stats.jitterSum.GetSeconds()
+        )
+
+        if metrics["rx_packets"] > 1:
+            total_jitter_samples += (
+                metrics["rx_packets"] - 1
+            )
+
+        flow_throughputs.append(
+            metrics["throughput_mbit_s"]
+        )
+
+    # =====================================================
+    # Aggregierte Kennzahlen
+    # =====================================================
+
+    total_throughput_mbit_s = sum(
+        flow_throughputs
+    )
+
+    total_packet_loss_percent = (
+        (
+            (total_tx_packets - total_rx_packets)
+            / total_tx_packets
+        )
+        * 100.0
+        if total_tx_packets > 0
+        else 0.0
+    )
+
+    weighted_mean_delay_ms = (
+        total_delay_seconds
+        / total_rx_packets
+        * 1000.0
+        if total_rx_packets > 0
+        else 0.0
+    )
+
+    weighted_mean_jitter_ms = (
+        total_jitter_seconds
+        / total_jitter_samples
+        * 1000.0
+        if total_jitter_samples > 0
+        else 0.0
+    )
+
+    if flow_throughputs:
+
+        throughput_sum = sum(
+            flow_throughputs
+        )
+
+        throughput_square_sum = sum(
+            throughput ** 2
+            for throughput in flow_throughputs
+        )
+
+        fairness_index = (
+            throughput_sum ** 2
+            / (
+                len(flow_throughputs)
+                * throughput_square_sum
+            )
+            if throughput_square_sum > 0.0
+            else 0.0
+        )
+
+    else:
+        fairness_index = 0.0
+
+    # =====================================================
+    # Summary-CSV schreiben
+    # =====================================================
+
+    with open(
+        filename,
+        "w",
+        newline="",
+        encoding="utf-8",
+    ) as csv_file:
+
+        writer = csv.writer(csv_file)
+
+        writer.writerow([
+            "routing_strategy",
+            "scenario",
+            "scenario_name",
+            "seed",
+            "run_number",
+            "number_of_flows",
+            "total_tx_packets",
+            "total_rx_packets",
+            "total_lost_packets",
+            "packet_loss_percent",
+            "total_throughput_mbit_s",
+            "weighted_mean_delay_ms",
+            "weighted_mean_jitter_ms",
+            "jain_fairness_index",
+        ])
+
+        writer.writerow([
+            ROUTING_STRATEGY,
+            SCENARIO,
+            SCENARIO_NAME,
+            SEED,
+            RUN_NUMBER,
+            len(flow_throughputs),
+            total_tx_packets,
+            total_rx_packets,
+            total_lost_packets,
+            f"{total_packet_loss_percent:.6f}",
+            f"{total_throughput_mbit_s:.6f}",
+            f"{weighted_mean_delay_ms:.6f}",
+            f"{weighted_mean_jitter_ms:.6f}",
+            f"{fairness_index:.6f}",
+        ]) 
 
 def create_file_label() -> str:
     """
@@ -679,7 +1636,7 @@ def configure_routing_strategy(
     leaves,
     spine_leaf_interfaces,
     leaf_host_interfaces,
-) -> None:
+) -> dict:
     """
     Konfiguriert die gewählte Routingstrategie.
     """
@@ -712,7 +1669,7 @@ def configure_routing_strategy(
 
         ns.Ipv4GlobalRoutingHelper.PopulateRoutingTables()
 
-        configure_adaptive_routes(
+        flow_spines = configure_adaptive_routes(
             leaves,
             spine_leaf_interfaces,
             leaf_host_interfaces,
@@ -726,6 +1683,11 @@ def configure_routing_strategy(
             f"Unbekannte Routingstrategie: {ROUTING_STRATEGY}"
         )
 
+    if ROUTING_STRATEGY == "ADAPTIVE":
+        return flow_spines
+
+    return {}
+
 def create_traffic(
     hosts,
     leaf_host_interfaces,
@@ -737,7 +1699,12 @@ def create_traffic(
     print()
     print("Aktive Datenströme:")
 
-    for source_host, destination_host, data_rate in TRAFFIC_FLOWS:
+    for flow in TRAFFIC_FLOWS:
+        source_host = flow["source"]
+        destination_host = flow["destination"]
+        data_rate = flow["rate"]
+        flow_start = flow["start"]
+        flow_stop = flow["stop"]
 
         # Zieladresse bestimmen
         destination_address = (
@@ -763,8 +1730,8 @@ def create_traffic(
             hosts.Get(destination_host)
         )
 
-        sink_app.Start(ns.Seconds(SERVER_START))
-        sink_app.Stop(ns.Seconds(SIMULATION_END))
+        sink_app.Start(ns.Seconds(flow_start))
+        sink_app.Stop(ns.Seconds(flow_stop))
 
         # =================================================
         # OnOff Sender
@@ -827,6 +1794,13 @@ def main() -> None:
     """
     validate_configuration()
 
+    # =====================================================
+    # Reproduzierbare Zufallssteuerung
+    # =====================================================
+
+    ns.RngSeedManager.SetSeed(SEED)
+    ns.RngSeedManager.SetRun(RUN_NUMBER)
+
     print("\n==========================================")
     print("Netzwerkaufbau")
     print("==========================================")
@@ -856,6 +1830,7 @@ def main() -> None:
                     leaves.Get(leaf_index),
                 )
             )
+
 
     leaf_host_links = []
     hosts_per_leaf = NUM_HOSTS // NUM_LEAVES
@@ -918,14 +1893,16 @@ def main() -> None:
     # =====================================================
     # Routing konfigurieren
     # =====================================================
-    configure_routing_strategy(
+    flow_spines = configure_routing_strategy(
         leaves,
         spine_leaf_interfaces,
         leaf_host_interfaces,
     )
 
     # Für Dateinamen Leerzeichen und Sonderzeichen ersetzen.
-    FILE_LABEL = create_file_label()
+    FILE_LABEL = (
+        f"{create_file_label()}_seed_{SEED}_run_{RUN_NUMBER}"
+    )
 
     CSV_FILENAME = f"results_{FILE_LABEL}.csv"
     XML_FILENAME = f"flowmonitor_{FILE_LABEL}.xml"
@@ -961,6 +1938,8 @@ def main() -> None:
     print("==========================================")
 
     print(f"Traffic-Szenario : {SCENARIO_NAME}")
+    print(f"Seed             : {SEED}")
+    print(f"Run              : {RUN_NUMBER}")
 
     create_traffic(
         hosts,
@@ -969,6 +1948,20 @@ def main() -> None:
 
     flow_monitor_helper = ns.FlowMonitorHelper()
     flow_monitor = flow_monitor_helper.InstallAll()
+
+    if ROUTING_STRATEGY == "ADAPTIVE":
+        adaptive_event = AdaptiveRoutingEvent(
+            leaves,
+            spine_leaf_interfaces,
+            leaf_host_interfaces,
+            spine_leaf_links,
+            flow_spines,
+        )
+
+        ns.Simulator.Schedule(
+            ns.Seconds(1.5),
+            adaptive_event,
+        )
 
     ns.Simulator.Stop(ns.Seconds(SIMULATION_END))
 
@@ -990,6 +1983,15 @@ def main() -> None:
     """
     write_flow_results(flow_stats, CSV_FILENAME)
 
+    summary_filename = (
+        f"summary_{FILE_LABEL}.csv"
+    )
+
+    write_summary_results(
+        flow_stats,
+        summary_filename,
+    )
+
     flow_monitor.SerializeToXmlFile(XML_FILENAME, True, True)
 
     print("\n==========================================")
@@ -1008,6 +2010,7 @@ def main() -> None:
     print("==========================================")
 
     print(f"CSV           : {CSV_FILENAME}")
+    print(f"Summary CSV   : {summary_filename}")
     print(f"FlowMonitor   : {XML_FILENAME}")
     print(f"Routing       : {ROUTING_TABLE_FILENAME}")
 

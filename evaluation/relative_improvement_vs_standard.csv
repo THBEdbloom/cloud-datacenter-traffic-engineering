@@ -1,0 +1,22 @@
+scenario,scenario_label,routing_strategy,strategy_label,total_throughput_mbit_s_improvement_percent,packet_loss_percent_improvement_percent,weighted_mean_delay_ms_improvement_percent,weighted_mean_jitter_ms_improvement_percent,jain_fairness_index_improvement_percent
+1,Baseline,ECMP,ECMP,0.0,,0.0,,0.0
+1,Baseline,STATIC,Statisch,0.0,,0.0,,0.0
+1,Baseline,ADAPTIVE,Adaptiv,0.0,,0.0,,0.0
+2,Mittlere Last,ECMP,ECMP,0.0,,0.0,,0.0
+2,Mittlere Last,STATIC,Statisch,0.0,,0.0,,0.0
+2,Mittlere Last,ADAPTIVE,Adaptiv,0.0,,0.0,,0.0
+3,Hohe Last,ECMP,ECMP,0.0,,0.0,,0.0
+3,Hohe Last,STATIC,Statisch,0.0,,0.0,,0.0
+3,Hohe Last,ADAPTIVE,Adaptiv,0.0,,0.0,,0.0
+4,Überlast,ECMP,ECMP,0.02463608605992069,0.0,0.006497916966378552,0.0,0.0
+4,Überlast,STATIC,Statisch,0.012238368057033657,0.0,0.003248958483189276,0.0,0.0
+4,Überlast,ADAPTIVE,Adaptiv,0.018410571916116423,0.0,0.004861404545204196,0.0,0.0
+5,Hotspot,ECMP,ECMP,64.64219366093931,100.0,39.83669422940458,87.95314551146117,0.0
+5,Hotspot,STATIC,Statisch,0.0,0.0,0.0,0.0,0.0
+5,Hotspot,ADAPTIVE,Adaptiv,64.64221504404496,100.0,39.83941033786459,100.0,0.0
+6,Asymmetrische Last,ECMP,ECMP,85.15476199036937,100.0,39.243188012709055,87.56548111386822,-17.861696396003467
+6,Asymmetrische Last,STATIC,Statisch,41.09453450756309,48.53175846835843,6.125123687827292,64.76426799007444,-8.286771439758068
+6,Asymmetrische Last,ADAPTIVE,Adaptiv,85.15477169393743,100.0,39.245434984516,100.0,-17.861696396003467
+7,Dynamischer Hotspot,ECMP,ECMP,64.64219366093931,100.0,39.83669422940458,87.95314551146117,0.0
+7,Dynamischer Hotspot,STATIC,Statisch,0.0,0.0,0.0,0.0,0.0
+7,Dynamischer Hotspot,ADAPTIVE,Adaptiv,59.2300023351106,91.57116021233035,31.6942270242218,-979.8242956679795,-0.03849999999999687
